@@ -6,6 +6,7 @@ import { Dashboard } from '@/components/dashboard/Dashboard';
 import { KnowledgeBase } from '@/components/knowledge/KnowledgeBase';
 import { VideoLibrary } from '@/components/video/VideoLibrary';
 import { Analytics } from '@/components/analytics/Analytics';
+import { FileManagement } from '@/components/files/FileManagement';
 import { ProjectsList } from '@/components/projects/ProjectsList';
 import { ProjectDetail } from '@/components/projects/ProjectDetail';
 import { UserManagement } from '@/components/admin/UserManagement';
@@ -29,6 +30,11 @@ import {
   TabsList,
   TabsTrigger,
   Input,
+  Card,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardContent,
 } from '@/components/ui';
 import { 
   Search, 
@@ -44,7 +50,9 @@ import {
   Loader2,
   Crown,
   Users,
-  FolderEdit
+  FolderEdit,
+  Archive,
+  Upload
 } from 'lucide-react';
 
 // Authentication wrapper component
@@ -69,7 +77,7 @@ const AuthenticationGate: React.FC = () => {
 // Main application layout component
 const AppLayout: React.FC = () => {
   const { user, logout, isLoading } = useAuth();
-  const { isSystemAdmin, canManageUsers, canManageContent, canAccessAdminPanel } = useGlobalPermissions();
+  const { isSystemAdmin, canManageUsers, canManageContent, canAccessAdminPanel, canManageAllProjects } = useGlobalPermissions();
   const [selectedTab, setSelectedTab] = useState('dashboard');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedProject, setSelectedProject] = useState<any>(null);
@@ -172,15 +180,7 @@ const AppLayout: React.FC = () => {
                     </div>
                   </DropdownMenuLabel>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem>
-                    <User className="mr-2 h-4 w-4" />
-                    Profile
-                  </DropdownMenuItem>
-                  <DropdownMenuItem>
-                    <Settings className="mr-2 h-4 w-4" />
-                    Settings
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
+                  
                   <DropdownMenuItem onClick={handleLogout}>
                     <LogOut className="mr-2 h-4 w-4" />
                     Log out
@@ -197,16 +197,16 @@ const AppLayout: React.FC = () => {
         <Tabs value={selectedTab} onValueChange={setSelectedTab} className="space-y-6">
           <TabsList className={`grid w-full ${
             !canAccessAdminPanel() 
-              ? 'grid-cols-5' 
+              ? 'grid-cols-4' 
               : canManageUsers() && canManageContent()
-                ? 'grid-cols-8'
+                ? 'grid-cols-6'
                 : canManageUsers() || canManageContent()
-                  ? 'grid-cols-7' 
-                  : 'grid-cols-6'
+                  ? 'grid-cols-5' 
+                  : 'grid-cols-4'
           }`}>
             <TabsTrigger value="dashboard" className="flex items-center space-x-2">
               <BarChart3 className="h-4 w-4" />
-              <span>Dashboard</span>
+              <span>Home</span>
             </TabsTrigger>
             <TabsTrigger value="projects" className="flex items-center space-x-2">
               <FolderOpen className="h-4 w-4" />
@@ -214,32 +214,24 @@ const AppLayout: React.FC = () => {
             </TabsTrigger>
             <TabsTrigger value="knowledge" className="flex items-center space-x-2">
               <FileText className="h-4 w-4" />
-              <span>Knowledge</span>
+              <span>Knowledge Hub</span>
             </TabsTrigger>
-            <TabsTrigger value="videos" className="flex items-center space-x-2">
-              <Video className="h-4 w-4" />
-              <span>Videos</span>
-            </TabsTrigger>
-            <TabsTrigger value="analytics" className="flex items-center space-x-2">
-              <BarChart3 className="h-4 w-4" />
-              <span>Analytics</span>
+            <TabsTrigger value="resources" className="flex items-center space-x-2">
+              <Archive className="h-4 w-4" />
+              <span>Resources</span>
             </TabsTrigger>
             {canAccessAdminPanel() && (
               <>
                 {canManageUsers() && (
-                  <TabsTrigger value="users" className="flex items-center space-x-2">
+                  <TabsTrigger value="admin-users" className="flex items-center space-x-2">
                     <Users className="h-4 w-4" />
-                    <span>Users</span>
+                    <span>Admin</span>
                   </TabsTrigger>
                 )}
-                <TabsTrigger value="projects-mgmt" className="flex items-center space-x-2">
-                  <FolderEdit className="h-4 w-4" />
-                  <span>Manage Projects</span>
-                </TabsTrigger>
-                {canManageContent() && (
-                  <TabsTrigger value="content-mgmt" className="flex items-center space-x-2">
+                {(canManageContent() || canManageAllProjects()) && (
+                  <TabsTrigger value="admin-content" className="flex items-center space-x-2">
                     <Settings className="h-4 w-4" />
-                    <span>Manage Content</span>
+                    <span>Management</span>
                   </TabsTrigger>
                 )}
               </>
@@ -273,14 +265,45 @@ const AppLayout: React.FC = () => {
             <KnowledgeBase />
           </TabsContent>
 
-          {/* Video Library Tab */}
-          <TabsContent value="videos">
-            <VideoLibrary />
-          </TabsContent>
+          {/* Resources Tab - Combines Videos, Analytics, and Files */}
+          <TabsContent value="resources">
+            <div className="space-y-6">
+              <div className="border-b">
+                <h2 className="text-2xl font-bold mb-2">Resources & Analytics</h2>
+                <p className="text-muted-foreground mb-4">
+                  Access video library, analytics insights, and file management tools
+                </p>
+              </div>
+              
+              <Tabs defaultValue="analytics" className="space-y-4">
+                <TabsList className="grid w-full grid-cols-3">
+                  <TabsTrigger value="analytics" className="flex items-center space-x-2">
+                    <BarChart3 className="h-4 w-4" />
+                    <span>Analytics</span>
+                  </TabsTrigger>
+                  <TabsTrigger value="videos" className="flex items-center space-x-2">
+                    <Video className="h-4 w-4" />
+                    <span>Videos</span>
+                  </TabsTrigger>
+                  <TabsTrigger value="files" className="flex items-center space-x-2">
+                    <FileText className="h-4 w-4" />
+                    <span>Files</span>
+                  </TabsTrigger>
+                </TabsList>
 
-          {/* Analytics Tab */}
-          <TabsContent value="analytics">
-            <Analytics />
+                <TabsContent value="analytics">
+                  <Analytics />
+                </TabsContent>
+
+                <TabsContent value="videos">
+                  <VideoLibrary />
+                </TabsContent>
+
+                <TabsContent value="files">
+                  <FileManagement />
+                </TabsContent>
+              </Tabs>
+            </div>
           </TabsContent>
 
           {/* Admin Tabs */}
@@ -288,20 +311,51 @@ const AppLayout: React.FC = () => {
             <>
               {/* User Management Tab */}
               {canManageUsers() && (
-                <TabsContent value="users">
+                <TabsContent value="admin-users">
                   <UserManagement />
                 </TabsContent>
               )}
 
-              {/* Projects Management Tab */}
-              <TabsContent value="projects-mgmt">
-                <AdminProjectsManagement />
-              </TabsContent>
+              {/* Admin Content Management Tab */}
+              {(canManageContent() || canManageAllProjects()) && (
+                <TabsContent value="admin-content">
+                  <div className="space-y-6">
+                    <div className="border-b">
+                      <h2 className="text-2xl font-bold mb-2">Administration</h2>
+                      <p className="text-muted-foreground mb-4">
+                        Manage projects, content, and system resources
+                      </p>
+                    </div>
+                    
+                    <Tabs defaultValue="projects" className="space-y-4">
+                      <TabsList className="grid w-full grid-cols-2">
+                        {canManageAllProjects() && (
+                          <TabsTrigger value="projects" className="flex items-center space-x-2">
+                            <FolderEdit className="h-4 w-4" />
+                            <span>Projects</span>
+                          </TabsTrigger>
+                        )}
+                        {canManageContent() && (
+                          <TabsTrigger value="content" className="flex items-center space-x-2">
+                            <FileText className="h-4 w-4" />
+                            <span>Content</span>
+                          </TabsTrigger>
+                        )}
+                      </TabsList>
 
-              {/* Content Management Tab */}
-              {canManageContent() && (
-                <TabsContent value="content-mgmt">
-                  <ContentManagement />
+                      {canManageAllProjects() && (
+                        <TabsContent value="projects">
+                          <AdminProjectsManagement />
+                        </TabsContent>
+                      )}
+
+                      {canManageContent() && (
+                        <TabsContent value="content">
+                          <ContentManagement />
+                        </TabsContent>
+                      )}
+                    </Tabs>
+                  </div>
                 </TabsContent>
               )}
             </>

@@ -1,5 +1,19 @@
 import React from 'react';
-import { Users, Calendar, Settings, Trash2, Edit, Eye, Crown, UserCheck, Eye as EyeIcon } from 'lucide-react';
+import { 
+  Users, 
+  Calendar, 
+  Settings, 
+  Trash2, 
+  Edit, 
+  Eye, 
+  Crown, 
+  UserCheck, 
+  UserPlus,
+  Code,
+  Building,
+  MoreVertical,
+  ExternalLink
+} from 'lucide-react';
 import {
   Card,
   CardContent,
@@ -15,134 +29,146 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
+  Avatar,
+  AvatarFallback,
 } from '@/components/ui';
 import { 
   Project, 
   ProjectRole,
   projectUtils 
 } from '@/services/api/projects';
-import { useRolePermissions, getRoleColor, getRoleIcon, getRoleDisplayName } from '@/hooks/useRolePermissions';
+import { useGlobalPermissions } from '@/hooks/useRolePermissions';
 import { RoleGuard, PermissionGuard, useConditionalRender } from '@/components/auth/RoleGuard';
 
-interface EnhancedProject extends Project {
-  userMembership?: any;
-  userRole?: ProjectRole;
-  isUserMember?: boolean;
-}
-
 interface ProjectCardProps {
-  project: EnhancedProject;
-  onProjectClick?: (project: Project) => void;
-  onEditClick?: (project: Project) => void;
-  onDeleteClick?: (project: Project) => void;
+  project: Project;
+  onClick?: (project: Project) => void;
+  onEdit?: (project: Project) => void;
+  onDelete?: (project: Project) => void;
+  onJoin?: (project: Project) => void;
+  showActions?: boolean;
+  isUserMember?: boolean;
 }
 
 export const ProjectCard: React.FC<ProjectCardProps> = ({
   project,
-  onProjectClick,
-  onEditClick,
-  onDeleteClick
+  onClick,
+  onEdit,
+  onDelete,
+  onJoin,
+  showActions = false,
+  isUserMember = false
 }) => {
-  const { canPerform } = useRolePermissions(project.id);
-  const { renderIfPermission, renderIf } = useConditionalRender(project.id);
+  const { canCreateProject, canManageAllProjects, user } = useGlobalPermissions();
 
   const handleCardClick = () => {
-    if (onProjectClick) {
-      onProjectClick(project);
+    if (onClick) {
+      onClick(project);
     }
   };
 
-  const handleEditClick = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (onEditClick) {
-      onEditClick(project);
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'ACTIVE':
+        return 'bg-green-100 text-green-800 border-green-200';
+      case 'PLANNING':
+        return 'bg-blue-100 text-blue-800 border-blue-200';
+      case 'ON_HOLD':
+        return 'bg-yellow-100 text-yellow-800 border-yellow-200';
+      case 'COMPLETED':
+        return 'bg-purple-100 text-purple-800 border-purple-200';
+      default:
+        return 'bg-gray-100 text-gray-800 border-gray-200';
     }
   };
 
-  const handleDeleteClick = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (onDeleteClick) {
-      onDeleteClick(project);
-    }
+  const formatDate = (dateString: string | null) => {
+    if (!dateString) return 'Not set';
+    return new Date(dateString).toLocaleDateString();
   };
 
-  const handleViewClick = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    handleCardClick();
+  const canEditProject = () => {
+    return canManageAllProjects() || canCreateProject;
+  };
+
+  const canDeleteProject = () => {
+    return canManageAllProjects();
   };
 
   return (
-    <Card className="hover:shadow-md transition-shadow group relative">
-      {/* Role indicator for user's membership */}
-      {project.isUserMember && project.userRole && (
-        <div className="absolute top-2 right-2 z-10">
-          <Badge 
-            variant="outline" 
-            className={`${getRoleColor(project.userRole)} text-xs flex items-center gap-1`}
-          >
-            <span>{getRoleIcon(project.userRole)}</span>
-            {getRoleDisplayName(project.userRole)}
-          </Badge>
-        </div>
-      )}
-
-      <CardHeader className="pb-3 cursor-pointer" onClick={handleCardClick}>
-        <div className="flex justify-between items-start pr-20">
+    <Card 
+      className="hover:shadow-lg transition-shadow cursor-pointer group"
+      onClick={handleCardClick}
+    >
+      <CardHeader className="pb-3">
+        <div className="flex items-start justify-between">
           <div className="flex-1">
-            <CardTitle className="text-lg line-clamp-2 group-hover:text-primary">
+            <CardTitle className="text-lg group-hover:text-primary transition-colors">
               {project.name}
             </CardTitle>
-            {project.description && (
-              <CardDescription className="mt-1 line-clamp-2">
-                {project.description}
-              </CardDescription>
-            )}
+            <div className="flex items-center gap-2 mt-2">
+              <Badge 
+                variant="outline" 
+                className={`text-xs ${getStatusColor(project.status)}`}
+              >
+                {project.status}
+              </Badge>
+              {isUserMember && (
+                <Badge variant="secondary" className="text-xs">
+                  <UserCheck className="h-3 w-3 mr-1" />
+                  Member
+                </Badge>
+              )}
+            </div>
           </div>
           
-          {/* Action menu - only show if user has permissions */}
-          <RoleGuard 
-            projectId={project.id} 
-            requiredPermission="canViewProject"
-            fallback={null}
-          >
+          {showActions && (
             <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button 
-                  variant="ghost" 
-                  size="sm" 
-                  className="opacity-0 group-hover:opacity-100 transition-opacity absolute top-4 right-4"
-                >
-                  <Settings className="h-4 w-4" />
+              <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                  <MoreVertical className="h-4 w-4" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 <DropdownMenuLabel>Actions</DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 
-                <DropdownMenuItem onClick={handleViewClick}>
+                <DropdownMenuItem onClick={(e) => {
+                  e.stopPropagation();
+                  onClick?.(project);
+                }}>
                   <Eye className="h-4 w-4 mr-2" />
                   View Details
                 </DropdownMenuItem>
-
-                {renderIfPermission('canEditProject', 
-                  <DropdownMenuItem onClick={handleEditClick}>
+                
+                {!isUserMember && onJoin && (
+                  <DropdownMenuItem onClick={(e) => {
+                    e.stopPropagation();
+                    onJoin(project);
+                  }}>
+                    <UserPlus className="h-4 w-4 mr-2" />
+                    Join Project
+                  </DropdownMenuItem>
+                )}
+                
+                {canEditProject() && onEdit && (
+                  <DropdownMenuItem onClick={(e) => {
+                    e.stopPropagation();
+                    onEdit(project);
+                  }}>
                     <Edit className="h-4 w-4 mr-2" />
                     Edit Project
                   </DropdownMenuItem>
                 )}
-
-                {renderIfPermission('canManageMembers',
-                  <DropdownMenuItem onClick={() => console.log('Manage members')}>
-                    <Users className="h-4 w-4 mr-2" />
-                    Manage Members
-                  </DropdownMenuItem>
-                )}
-
-                {renderIfPermission('canDeleteProject', 
+                
+                {canDeleteProject() && onDelete && (
                   <>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem 
-                      onClick={handleDeleteClick}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onDelete(project);
+                      }}
                       className="text-red-600"
                     >
                       <Trash2 className="h-4 w-4 mr-2" />
@@ -152,98 +178,84 @@ export const ProjectCard: React.FC<ProjectCardProps> = ({
                 )}
               </DropdownMenuContent>
             </DropdownMenu>
-          </RoleGuard>
-        </div>
-        
-        {/* Status and Client */}
-        <div className="flex flex-wrap gap-2 mt-3">
-          <Badge variant="secondary" className={projectUtils.getStatusColor(project.status)}>
-            {projectUtils.formatStatus(project.status)}
-          </Badge>
-          {project.clientName && (
-            <Badge variant="outline">
-              {project.clientName}
-            </Badge>
           )}
         </div>
       </CardHeader>
 
-      <CardContent className="pt-0">
-        {/* Technology tags */}
-        {project.technology && project.technology.length > 0 && (
-          <div className="mb-3">
-            <p className="text-sm text-muted-foreground">
-              <strong>Tech:</strong> {projectUtils.getTechnologyDisplay(project.technology)}
-            </p>
-          </div>
-        )}
+      <CardContent className="pb-4">
+        <CardDescription className="text-sm text-muted-foreground line-clamp-3 mb-4">
+          {project.description || 'No description provided.'}
+        </CardDescription>
 
-        {/* User's role in project */}
-        {project.isUserMember && (
-          <div className="mb-3 p-2 bg-muted rounded-md">
-            <p className="text-xs text-muted-foreground flex items-center gap-2">
-              <span>{getRoleIcon(project.userRole!)}</span>
-              <span>Your role: <strong>{getRoleDisplayName(project.userRole!)}</strong></span>
-              {project.userRole === ProjectRole.LEAD && (
-                <Crown className="h-3 w-3 text-yellow-500" />
-              )}
-            </p>
-          </div>
-        )}
+        <div className="space-y-3">
+          {/* Technology */}
+          {project.technology && (
+            <div className="flex items-center gap-2 text-sm">
+              <Code className="h-4 w-4 text-muted-foreground" />
+              <span className="font-medium">{project.technology}</span>
+            </div>
+          )}
 
-        {/* Project metrics */}
-        <div className="flex items-center justify-between text-sm text-muted-foreground">
-          <div className="flex items-center gap-1">
-            <Users className="h-4 w-4" />
-            <span>{project.memberCount || 0} members</span>
+          {/* Client */}
+          {project.clientName && (
+            <div className="flex items-center gap-2 text-sm">
+              <Building className="h-4 w-4 text-muted-foreground" />
+              <span>{project.clientName}</span>
+            </div>
+          )}
+
+          {/* Dates */}
+          <div className="flex items-center gap-2 text-sm">
+            <Calendar className="h-4 w-4 text-muted-foreground" />
+            <span>
+              {formatDate(project.startDate)}
+              {project.endDate && ` - ${formatDate(project.endDate)}`}
+            </span>
           </div>
-          <div className="flex items-center gap-1">
-            <Calendar className="h-4 w-4" />
-            <span>{new Date(project.createdAt).toLocaleDateString()}</span>
+
+          {/* Member count placeholder */}
+          <div className="flex items-center gap-2 text-sm">
+            <Users className="h-4 w-4 text-muted-foreground" />
+            <span>Team project</span>
           </div>
         </div>
-
-        {/* Membership status for non-members */}
-        {!project.isUserMember && (
-          <div className="mt-3 p-2 bg-gray-50 rounded-md border-l-4 border-gray-300">
-            <p className="text-xs text-gray-600 flex items-center gap-2">
-              <EyeIcon className="h-3 w-3" />
-              <span>Public project - You can view but not contribute</span>
-            </p>
-          </div>
-        )}
       </CardContent>
 
-      <CardFooter className="pt-0 flex justify-between">
-        <div className="flex items-center gap-1 text-xs text-muted-foreground">
-          {project.startDate && (
-            <span>Started: {new Date(project.startDate).toLocaleDateString()}</span>
-          )}
-        </div>
-        
-        <div className="flex gap-2">
-          {/* Quick action buttons based on permissions */}
-          {renderIfPermission('canViewProject',
-            <Button
-              variant="ghost"
+      <CardFooter className="pt-0">
+        <div className="flex items-center justify-between w-full">
+          <div className="flex items-center gap-2">
+            <Button 
+              variant="outline" 
               size="sm"
-              onClick={handleViewClick}
-              className="opacity-0 group-hover:opacity-100 transition-opacity"
+              onClick={(e) => {
+                e.stopPropagation();
+                onClick?.(project);
+              }}
+              className="flex items-center gap-1"
             >
-              View Details
+              <ExternalLink className="h-3 w-3" />
+              View
             </Button>
-          )}
+            
+            {!isUserMember && onJoin && (
+              <Button 
+                size="sm"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onJoin(project);
+                }}
+                className="flex items-center gap-1"
+              >
+                <UserPlus className="h-3 w-3" />
+                Join
+              </Button>
+            )}
+          </div>
 
-          {renderIfPermission('canEditProject',
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleEditClick}
-              className="opacity-0 group-hover:opacity-100 transition-opacity"
-            >
-              Edit
-            </Button>
-          )}
+          {/* Project stats or additional info */}
+          <div className="text-xs text-muted-foreground">
+            Created {formatDate(project.createdAt)}
+          </div>
         </div>
       </CardFooter>
     </Card>

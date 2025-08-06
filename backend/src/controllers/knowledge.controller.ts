@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { validationResult } from 'express-validator';
 import { knowledgeService } from '../services/knowledge.service';
+import { activityService } from '../services/activity.service';
 import { 
   CreateKnowledgeRequest, 
   UpdateKnowledgeRequest,
@@ -57,6 +58,9 @@ export class KnowledgeController {
       const createData: CreateKnowledgeRequest = req.body;
       
       const knowledgeItem = await knowledgeService.createKnowledgeItem(userId, createData);
+
+      // Log activity
+      await activityService.logKnowledgeCreated(userId, knowledgeItem.id, knowledgeItem.title);
 
       logger.info('Knowledge item created successfully', {
         knowledgeId: knowledgeItem.id,
@@ -182,6 +186,9 @@ export class KnowledgeController {
       const updateData: UpdateKnowledgeRequest = req.body;
       
       const updatedItem = await knowledgeService.updateKnowledgeItem(id, userId, updateData);
+
+      // Log activity
+      await activityService.logKnowledgeUpdated(userId, id, updatedItem.title);
 
       logger.info('Knowledge item updated successfully', {
         knowledgeId: id,
@@ -369,6 +376,103 @@ export class KnowledgeController {
         timestamp: new Date().toISOString()
       });
     } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Get knowledge statistics
+   * GET /api/knowledge/stats
+   */
+  async getKnowledgeStats(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const stats = await knowledgeService.getKnowledgeStats();
+
+      res.status(200).json({
+        success: true,
+        data: stats,
+        timestamp: new Date().toISOString()
+      });
+    } catch (error) {
+      logger.error('Get knowledge stats failed', {
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+      next(error);
+    }
+  }
+
+  /**
+   * Get featured/popular knowledge items
+   * GET /api/knowledge/featured
+   */
+  async getFeaturedKnowledgeItems(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const limit = parseInt(req.query.limit as string) || 10;
+      const items = await knowledgeService.getFeaturedKnowledgeItems(limit);
+
+      res.status(200).json({
+        success: true,
+        data: { items },
+        timestamp: new Date().toISOString()
+      });
+    } catch (error) {
+      logger.error('Get featured knowledge items failed', {
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+      next(error);
+    }
+  }
+
+  /**
+   * Search knowledge items with advanced filtering
+   * GET /api/knowledge/search
+   */
+  async searchKnowledgeItems(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      // Check validation results
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        res.status(400).json({
+          success: false,
+          message: 'Validation failed',
+          code: 'VALIDATION_ERROR',
+          errors: errors.array(),
+          timestamp: new Date().toISOString(),
+          path: req.originalUrl
+        });
+        return;
+      }
+
+      const options: KnowledgeSearchOptions = {
+        search: req.query.search as string,
+        type: req.query.type as any,
+        difficulty: req.query.difficulty as any,
+        status: req.query.status as any,
+        category: req.query.category as string,
+        tags: req.query.tags ? (req.query.tags as string).split(',') : undefined,
+        projectId: req.query.projectId as string,
+        authorId: req.query.authorId as string,
+        isPublic: req.query.isPublic ? req.query.isPublic === 'true' : undefined,
+        page: parseInt(req.query.page as string) || 1,
+        limit: Math.min(parseInt(req.query.limit as string) || 10, 50),
+        sortBy: req.query.sortBy as any || 'createdAt',
+        sortOrder: req.query.sortOrder as any || 'desc'
+      };
+
+      const result = await knowledgeService.searchKnowledgeItemsAdvanced(options);
+
+      res.status(200).json({
+        success: true,
+        data: result.items,
+        pagination: result.pagination,
+        totalPages: result.totalPages,
+        timestamp: new Date().toISOString()
+      });
+    } catch (error) {
+      logger.error('Search knowledge items failed', {
+        error: error instanceof Error ? error.message : 'Unknown error',
+        options: req.query
+      });
       next(error);
     }
   }

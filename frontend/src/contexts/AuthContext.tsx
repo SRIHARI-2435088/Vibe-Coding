@@ -49,19 +49,62 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   useEffect(() => {
     const initializeAuth = async () => {
       try {
-        if (authUtils.isAuthenticated()) {
-          // Try to validate current authentication
-          const profile = await authApi.validateAuth();
-          setUser(profile);
-        } else {
-          // Clear any stale data
+        setIsLoading(true);
+        
+        // Check if we have a token
+        if (!authUtils.isAuthenticated()) {
+          // No valid token, clear everything and stop loading
           authUtils.clearAuthData();
+          setUser(null);
+          setIsLoading(false);
+          return;
+        }
+
+        // Try to get stored user profile first
+        const storedProfile = authUtils.getStoredUserProfile();
+        
+        if (storedProfile) {
+          // Set user from stored profile immediately
+          setUser(storedProfile);
+          
+          // Try to validate and refresh profile in background
+          try {
+            const freshProfile = await authApi.validateAuth();
+            setUser(freshProfile);
+          } catch (error: any) {
+            console.warn('Failed to validate auth, using stored profile:', error);
+            
+            // Only clear auth if the error indicates invalid authentication
+            if (error?.response?.status === 401 || error?.response?.status === 403) {
+              console.log('Token is invalid, clearing auth data');
+              authUtils.clearAuthData();
+              setUser(null);
+            }
+            // For network errors or other issues, keep the stored profile
+          }
+        } else {
+          // No stored profile, try to validate token
+          try {
+            const profile = await authApi.validateAuth();
+            setUser(profile);
+          } catch (error) {
+            console.log('Auth validation failed, clearing auth data');
+            authUtils.clearAuthData();
+            setUser(null);
+          }
         }
       } catch (error) {
         console.error('Auth initialization failed:', error);
-        authUtils.clearAuthData();
-        setUser(null);
-        // Don't show toast on initialization failure as it might be expected
+        // On any unexpected error, check if we have a valid stored profile
+        const storedProfile = authUtils.getStoredUserProfile();
+        if (storedProfile && authUtils.isAuthenticated()) {
+          // Keep user logged in with stored profile
+          setUser(storedProfile);
+        } else {
+          // Clear everything if no valid data
+          authUtils.clearAuthData();
+          setUser(null);
+        }
       } finally {
         setIsLoading(false);
       }

@@ -81,11 +81,24 @@ export const adminApi = {
   },
 
   /**
-   * Get system statistics
+   * Get comprehensive dashboard statistics
+   */
+  async getDashboardStats(): Promise<any> {
+    try {
+      const response = await apiClient.get<{ success: boolean; data: any }>('/admin/dashboard-stats');
+      return response.data.data;
+    } catch (error) {
+      console.error('Failed to get dashboard stats:', error);
+      throw handleApiError(error, 'Failed to load dashboard statistics');
+    }
+  },
+
+  /**
+   * Get system statistics (for backward compatibility)
    */
   async getSystemStats(): Promise<SystemStats> {
     try {
-      const response = await apiClient.get<{ success: boolean; data: SystemStats }>('/admin/stats');
+      const response = await apiClient.get<{ success: boolean; data: SystemStats }>('/admin/system-stats');
       return response.data.data;
     } catch (error) {
       console.error('Failed to get system stats:', error);

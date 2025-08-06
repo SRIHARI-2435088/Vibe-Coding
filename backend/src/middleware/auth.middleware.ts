@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { UnauthorizedError } from './error.middleware';
+import { JWTPayload } from '../types/auth.types';
 
 // Extend Request interface to include user
 declare global {
@@ -29,12 +30,15 @@ export const authMiddleware = (req: Request, res: Response, next: NextFunction) 
       throw new UnauthorizedError('Access token required');
     }
 
-    const jwtSecret = process.env.JWT_SECRET;
+    const jwtSecret = process.env.JWT_SECRET || 'demo-jwt-secret-for-development-only-2024';
     if (!jwtSecret) {
       throw new Error('JWT_SECRET not configured');
     }
 
-    const decoded = jwt.verify(token, jwtSecret) as any;
+    const decoded = jwt.verify(token, jwtSecret, {
+      issuer: 'ktat-api',
+      audience: 'ktat-app',
+    }) as JWTPayload;
     
     // Add user info to request object
     req.user = {

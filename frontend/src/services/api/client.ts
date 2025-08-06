@@ -32,13 +32,66 @@ const createApiClient = (): AxiosInstance => {
     (response: AxiosResponse) => {
       return response;
     },
-    (error: AxiosError) => {
+    async (error: AxiosError) => {
+      const originalRequest = error.config as any;
+      
       // Handle common error scenarios
-      if (error.response?.status === 401) {
-        // Unauthorized - clear token and redirect to login
-        localStorage.removeItem('auth_token');
-        localStorage.removeItem('user_profile');
-        window.location.href = '/login';
+      if (error.response?.status === 401 && !originalRequest._retry) {
+        originalRequest._retry = true;
+        
+        // Check if this is a token refresh attempt or validation
+        const isRefreshEndpoint = originalRequest?.url?.includes('/auth/refresh');
+        const isValidateEndpoint = originalRequest?.url?.includes('/auth/validate');
+        const isLoginEndpoint = originalRequest?.url?.includes('/auth/login');
+        
+        if (!isRefreshEndpoint && !isValidateEndpoint && !isLoginEndpoint) {
+          // Try to refresh token first
+          try {
+            const currentToken = tokenManager.getToken();
+            if (currentToken && !tokenManager.isTokenExpired(currentToken)) {
+              const refreshResponse = await client.post('/auth/refresh');
+              
+              if (refreshResponse.data?.data?.token) {
+                const newToken = refreshResponse.data.data.token;
+                tokenManager.setToken(newToken);
+                
+                if (refreshResponse.data?.data?.user) {
+                  localStorage.setItem('user_profile', JSON.stringify(refreshResponse.data.data.user));
+                }
+                
+                // Retry original request with new token
+                if (originalRequest) {
+                  originalRequest.headers.Authorization = `Bearer ${newToken}`;
+                  return client(originalRequest);
+                }
+              }
+            }
+          } catch (refreshError) {
+            console.warn('Token refresh failed:', refreshError);
+            // Only clear auth data if refresh fails
+            localStorage.removeItem('auth_token');
+            localStorage.removeItem('user_profile');
+            
+            // Only redirect if we're not already on the login page
+            if (window.location.pathname !== '/login' && window.location.pathname !== '/') {
+              window.location.href = '/';
+            }
+          }
+        } else {
+          // This is a refresh, validate, or login endpoint failing
+          console.warn('Auth endpoint failed:', error);
+          if (isRefreshEndpoint || (isValidateEndpoint && error.response?.status === 401)) {
+            // Clear tokens only for auth endpoint failures
+            localStorage.removeItem('auth_token');
+            localStorage.removeItem('user_profile');
+          }
+        }
+      } else if (error.response?.status === 403) {
+        console.warn('Access forbidden:', error);
+        // Don't automatically logout on forbidden errors
+      } else if (!error.response) {
+        // Network error, don't logout the user
+        console.warn('Network error:', error);
       }
       
       return Promise.reject(error);

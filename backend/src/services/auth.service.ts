@@ -1,21 +1,12 @@
-import { 
-  LoginRequest, 
-  RegisterRequest, 
-  AuthResponse, 
-  UserProfile, 
-  UserRole,
-    JWTPayload
-} from '../types/auth.types';
-import { hashPassword, comparePassword, validatePasswordStrength } from '../utils/password.utils';
+import { UserProfile, RegisterRequest, LoginRequest, AuthResponse, UserRole, JWTPayload } from '../types/auth.types';
 import { generateToken, generateRefreshToken } from '../utils/jwt.utils';
-import { simpleDb } from '../config/simple-db';
+import { hashPassword, comparePassword, validatePasswordStrength } from '../utils/password.utils';
+import { prismaClient as prisma } from '../config/prisma';
+import { logger } from '../utils/logger.utils';
 
-// Helper function to generate unique ID
 function generateId(): string {
-  return Math.random().toString(36).substring(2) + Date.now().toString(36);
+  return Date.now().toString() + Math.random().toString(36).substr(2, 9);
 }
-
-
 
 /**
  * Authentication Service
@@ -35,7 +26,10 @@ export class AuthService {
       }
 
       // Check if email already exists
-      const existingUser = await simpleDb.findUserByEmail(data.email);
+      const existingUser = await prisma.user.findUnique({
+        where: { email: data.email }
+      });
+
       if (existingUser) {
         throw new Error('Email already registered');
       }
@@ -44,20 +38,19 @@ export class AuthService {
       const hashedPassword = await hashPassword(data.password);
 
       // Create user
-      const userId = generateId();
-      await simpleDb.createUser({
-        id: userId,
-        email: data.email,
-        username: data.username,
-        firstName: data.firstName,
-        lastName: data.lastName,
-        password: hashedPassword,
-        role: data.role || 'CONTRIBUTOR',
-        bio: data.bio,
-        expertiseAreas: data.expertiseAreas || [],
+      const user = await prisma.user.create({
+        data: {
+          email: data.email,
+          username: data.username,
+          firstName: data.firstName,
+          lastName: data.lastName,
+          password: hashedPassword,
+          role: data.role || 'CONTRIBUTOR',
+          bio: data.bio,
+          expertiseAreas: data.expertiseAreas ? JSON.stringify(data.expertiseAreas) : null,
+          isActive: true, // Auto-activate for demo purposes
+        }
       });
-
-      const user = await simpleDb.findUserById(userId);
 
       // Generate tokens
       const token = generateToken({ 
@@ -79,9 +72,9 @@ export class AuthService {
         bio: user.bio,
         expertiseAreas: user.expertiseAreas ? JSON.parse(user.expertiseAreas) : [],
         isActive: user.isActive,
-        createdAt: new Date(user.createdAt),
-        updatedAt: new Date(user.updatedAt || user.createdAt),
-        lastLoginAt: user.lastLoginAt ? new Date(user.lastLoginAt) : undefined
+        createdAt: user.createdAt,
+        updatedAt: user.updatedAt,
+        lastLoginAt: user.lastLoginAt
       };
 
       return {
@@ -103,7 +96,9 @@ export class AuthService {
   async login(data: LoginRequest): Promise<AuthResponse> {
     try {
       // Find user by email
-      const user = await simpleDb.findUserByEmail(data.email);
+      const user = await prisma.user.findUnique({
+        where: { email: data.email }
+      });
       
       if (!user) {
         throw new Error('Invalid credentials');
@@ -122,7 +117,10 @@ export class AuthService {
       }
 
       // Update last login timestamp
-      await simpleDb.updateUserLastLogin(user.id);
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { lastLoginAt: new Date() }
+      });
 
       // Generate tokens
       const token = generateToken({ 
@@ -130,7 +128,7 @@ export class AuthService {
         email: user.email, 
         role: user.role 
       });
-      const refreshToken = generateRefreshToken({ id: user.id });
+      const refreshToken = generateRefreshToken({ id: user.id, email: user.email, role: user.role });
 
       // Format user profile
       const userProfile: UserProfile = {
@@ -145,13 +143,16 @@ export class AuthService {
         expertiseAreas: user.expertiseAreas ? JSON.parse(user.expertiseAreas) : [],
         isActive: user.isActive,
         createdAt: user.createdAt,
+        updatedAt: user.updatedAt,
         lastLoginAt: new Date() // Current login time
       };
 
       return {
+        success: true,
         user: userProfile,
         token,
-        refreshToken
+        refreshToken,
+        expiresIn: '7d'
       };
     } catch (error) {
       console.error('Login error:', error);
@@ -164,7 +165,9 @@ export class AuthService {
    */
   async validateUser(userId: string): Promise<UserProfile | null> {
     try {
-      const user = await simpleDb.findUserById(userId);
+      const user = await prisma.user.findUnique({
+        where: { id: userId }
+      });
       
       if (!user || !user.isActive) {
         return null;
@@ -182,6 +185,7 @@ export class AuthService {
         expertiseAreas: user.expertiseAreas ? JSON.parse(user.expertiseAreas) : [],
         isActive: user.isActive,
         createdAt: user.createdAt,
+        updatedAt: user.updatedAt,
         lastLoginAt: user.lastLoginAt
       };
     } catch (error) {
@@ -211,7 +215,10 @@ export class AuthService {
     }>
   ): Promise<UserProfile> {
     try {
-      const updatedUser = await simpleDb.updateUser(userId, updateData);
+      const updatedUser = await prisma.user.update({
+        where: { id: userId },
+        data: updateData
+      });
 
       return {
         id: updatedUser.id,
@@ -225,6 +232,7 @@ export class AuthService {
         expertiseAreas: updatedUser.expertiseAreas ? JSON.parse(updatedUser.expertiseAreas) : [],
         isActive: updatedUser.isActive,
         createdAt: updatedUser.createdAt,
+        updatedAt: updatedUser.updatedAt,
         lastLoginAt: updatedUser.lastLoginAt
       };
     } catch (error) {
@@ -243,7 +251,9 @@ export class AuthService {
   ): Promise<void> {
     try {
       // Get user
-      const user = await simpleDb.findUserById(userId);
+      const user = await prisma.user.findUnique({
+        where: { id: userId }
+      });
       if (!user) {
         throw new Error('User not found');
       }
@@ -264,7 +274,10 @@ export class AuthService {
       const hashedNewPassword = await hashPassword(newPassword);
 
       // Update password
-      await simpleDb.updateUserPassword(userId, hashedNewPassword);
+      await prisma.user.update({
+        where: { id: userId },
+        data: { password: hashedNewPassword }
+      });
     } catch (error) {
       console.error('Password change error:', error);
       throw error;
@@ -303,7 +316,25 @@ export class AuthService {
     limit?: number;
   } = {}) {
     try {
-      return await simpleDb.getAllUsers();
+      return await prisma.user.findMany({
+        where: {
+          ...(options.search ? {
+            OR: [
+              { username: { contains: options.search, mode: 'insensitive' } },
+              { email: { contains: options.search, mode: 'insensitive' } },
+              { firstName: { contains: options.search, mode: 'insensitive' } },
+              { lastName: { contains: options.search, mode: 'insensitive' } },
+            ]
+          } : {}),
+          ...(options.role ? { role: options.role as UserRole } : {}),
+          ...(options.isActive !== undefined ? { isActive: options.isActive } : {}),
+        },
+        skip: (options.page || 1) * (options.limit || 10) - (options.limit || 10),
+        take: options.limit || 10,
+        orderBy: {
+          createdAt: 'desc',
+        },
+      });
     } catch (error) {
       console.error('Get all users error:', error);
       throw error;
@@ -315,7 +346,10 @@ export class AuthService {
    */
   async deactivateUser(userId: string): Promise<void> {
     try {
-      await simpleDb.deleteUser(userId);
+      await prisma.user.update({
+        where: { id: userId },
+        data: { isActive: false }
+      });
     } catch (error) {
       console.error('User deactivation error:', error);
       throw error;

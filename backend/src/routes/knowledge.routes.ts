@@ -157,6 +157,37 @@ const idValidation = [
 // ===== KNOWLEDGE ROUTES =====
 
 /**
+ * @route GET /api/knowledge/stats
+ * @description Get knowledge statistics
+ * @access Public
+ */
+router.get(
+  '/stats',
+  knowledgeController.getKnowledgeStats.bind(knowledgeController)
+);
+
+/**
+ * @route GET /api/knowledge/featured
+ * @description Get featured/popular knowledge items
+ * @access Public
+ */
+router.get(
+  '/featured',
+  knowledgeController.getFeaturedKnowledgeItems.bind(knowledgeController)
+);
+
+/**
+ * @route GET /api/knowledge/search
+ * @description Search knowledge items with filtering
+ * @access Public
+ */
+router.get(
+  '/search',
+  searchQueryValidation,
+  knowledgeController.searchKnowledgeItems.bind(knowledgeController)
+);
+
+/**
  * @route GET /api/knowledge
  * @description Get knowledge items with search and filtering
  * @access Public

@@ -162,12 +162,12 @@ export const ContentManagement: React.FC = () => {
   });
   const [tagInput, setTagInput] = useState('');
 
-  const { isSystemAdmin } = useGlobalPermissions();
+  const { canManageContent } = useGlobalPermissions();
   const { toast } = useToast();
 
   // Fetch knowledge items
   const fetchKnowledgeItems = async () => {
-    if (!isSystemAdmin()) {
+    if (!canManageContent()) {
       setLoading(false);
       return;
     }
@@ -218,10 +218,10 @@ export const ContentManagement: React.FC = () => {
   };
 
   useEffect(() => {
-    if (isSystemAdmin()) {
+    if (canManageContent()) {
       fetchKnowledgeItems();
     }
-  }, [isSystemAdmin]);
+  }, [canManageContent]);
 
   // Handle status update
   const handleStatusUpdate = async () => {
@@ -424,7 +424,7 @@ export const ContentManagement: React.FC = () => {
     public: knowledgeItems.filter(item => item.isPublic).length,
   };
 
-  if (!isSystemAdmin()) {
+  if (!canManageContent()) {
     return (
       <div className="text-center py-12">
         <Alert>

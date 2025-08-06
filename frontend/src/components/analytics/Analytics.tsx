@@ -1,45 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
-  LineChart,
-  Line,
-  AreaChart,
-  Area,
-  RadialBarChart,
-  RadialBar
-} from 'recharts';
-import {
-  TrendingUp,
-  TrendingDown,
-  Users,
-  FolderOpen,
-  BookOpen,
-  Eye,
-  Clock,
-  Activity,
-  Download,
-  Upload,
-  Calendar,
-  BarChart3,
-  PieChart as PieChartIcon,
-  LineChart as LineChartIcon,
-  Filter,
-  RefreshCw,
-  FileText,
-  Video,
-  Image,
-  Archive
-} from 'lucide-react';
-import {
   Card,
   CardContent,
   CardDescription,
@@ -47,264 +7,185 @@ import {
   CardTitle,
   Button,
   Badge,
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+  Progress,
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-  Alert,
-  AlertDescription,
   Skeleton,
 } from '@/components/ui';
-import { useGlobalPermissions } from '@/hooks/useRolePermissions';
-import { RoleGuard } from '@/components/auth/RoleGuard';
-import { projectsApi } from '@/services/api/projects';
-import { knowledgeApi } from '@/services/api/knowledge';
+import {
+  BarChart3,
+  TrendingUp,
+  Users,
+  BookOpen,
+  Eye,
+  Download,
+  Calendar,
+  Target,
+  Clock,
+  Award,
+  Activity,
+  FileText,
+  Video,
+  Share2,
+  MessageSquare,
+  ThumbsUp,
+  Star,
+  Zap,
+  Filter
+} from 'lucide-react';
 import { adminApi } from '@/services/api/admin';
+import { useGlobalPermissions } from '@/hooks/useRolePermissions';
 import { useToast } from '@/hooks/useToast';
-
-const COLORS = ['#8884d8', '#82ca9d', '#ffc658', '#ff7300', '#00ff00', '#ff8042'];
 
 interface AnalyticsData {
   overview: {
+    totalUsers: number;
+    activeUsers: number;
     totalProjects: number;
     activeProjects: number;
     totalKnowledge: number;
-    totalUsers: number;
-    totalFiles: number;
-    totalFileSize: number;
+    knowledgeViews: number;
+    weeklyGrowth: number;
+    engagement: number;
   };
-  projectMetrics: {
-    byStatus: Array<{ name: string; value: number; percentage: number }>;
-    byMonth: Array<{ month: string; created: number; completed: number }>;
-    topProjects: Array<{ name: string; members: number; knowledge: number; files: number }>;
+  knowledge: {
+    byCategory: Array<{ category: string; count: number; growth: number }>;
+    byType: Array<{ type: string; count: number; percentage: number }>;
+    topContributors: Array<{ user: string; contributions: number; views: number }>;
+    recentActivity: Array<{ action: string; user: string; item: string; timestamp: string }>;
+    popularItems: Array<{ title: string; views: number; likes: number; type: string }>;
   };
-  knowledgeMetrics: {
-    byCategory: Array<{ name: string; value: number; percentage: number }>;
-    byType: Array<{ name: string; value: number }>;
-    viewTrends: Array<{ date: string; views: number; created: number }>;
-    topContributors: Array<{ name: string; contributions: number; views: number }>;
+  projects: {
+    statusDistribution: Array<{ status: string; count: number; percentage: number }>;
+    completionRates: Array<{ project: string; completion: number; members: number }>;
+    collaboration: Array<{ metric: string; value: number; change: number }>;
   };
-  userMetrics: {
-    activeUsers: Array<{ date: string; count: number }>;
-    userActivity: Array<{ name: string; projects: number; knowledge: number; files: number }>;
-    registrationTrends: Array<{ month: string; registrations: number; approvals: number }>;
+  users: {
+    activityLevels: Array<{ level: string; count: number; percentage: number }>;
+    roleDistribution: Array<{ role: string; count: number; percentage: number }>;
+    engagementTrends: Array<{ date: string; logins: number; actions: number }>;
   };
-  fileMetrics: {
-    byType: Array<{ name: string; count: number; size: number }>;
-    uploadTrends: Array<{ date: string; uploads: number; size: number }>;
-    storageUsage: Array<{ category: string; used: number; total: number }>;
-  };
-}
-
-interface DateRange {
-  start: Date;
-  end: Date;
-  preset: '7d' | '30d' | '90d' | '1y' | 'custom';
 }
 
 export const Analytics: React.FC = () => {
-  const [analyticsData, setAnalyticsData] = useState<AnalyticsData | null>(null);
+  const [data, setData] = useState<AnalyticsData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [dateRange, setDateRange] = useState<DateRange>({
-    start: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000), // 30 days ago
-    end: new Date(),
-    preset: '30d'
-  });
+  const [timeRange, setTimeRange] = useState('7d');
   const [activeTab, setActiveTab] = useState('overview');
 
-  const { isSystemAdmin, isAuthenticated, user } = useGlobalPermissions();
+  const { canViewAllProjects, isAuthenticated } = useGlobalPermissions();
   const { toast } = useToast();
 
-  // Fetch analytics data
+  useEffect(() => {
+    if (isAuthenticated) {
+      fetchAnalyticsData();
+    }
+  }, [isAuthenticated, timeRange]);
+
   const fetchAnalyticsData = async () => {
+    setLoading(true);
     try {
-      setRefreshing(true);
+      // In a real app, this would be a comprehensive analytics API
+      const response = await adminApi.getDashboardStats();
       
-      // Fetch data from multiple sources
-      const [projectsResponse, userProjectsResponse, knowledgeResponse] = await Promise.all([
-        projectsApi.getAllProjects(),
-        projectsApi.getMyProjects(),
-        knowledgeApi.searchKnowledge({ query: '', page: 1, limit: 1000 })
-      ]);
-
-      // Get admin data if user is admin
-      let systemStats = null;
-      if (isSystemAdmin()) {
-        try {
-          systemStats = await adminApi.getSystemStats();
-        } catch (error) {
-          console.error('Error fetching admin stats:', error);
-        }
-      }
-
-      // Process projects data
-      const allProjects = projectsResponse.projects;
-      const projectsByStatus = allProjects.reduce((acc, project) => {
-        acc[project.status] = (acc[project.status] || 0) + 1;
-        return acc;
-      }, {} as Record<string, number>);
-
-      const totalProjects = allProjects.length;
-      const projectStatusData = Object.entries(projectsByStatus).map(([status, count]) => ({
-        name: status,
-        value: count,
-        percentage: Math.round((count / totalProjects) * 100)
-      }));
-
-      // Mock monthly project data
-      const projectMonthlyData = [
-        { month: 'Jan', created: 5, completed: 3 },
-        { month: 'Feb', created: 8, completed: 4 },
-        { month: 'Mar', created: 6, completed: 7 },
-        { month: 'Apr', created: 10, completed: 5 },
-        { month: 'May', created: 7, completed: 8 },
-        { month: 'Jun', created: 12, completed: 6 }
-      ];
-
-      // Process knowledge data
-      const allKnowledge = knowledgeResponse.items;
-      const knowledgeByCategory = allKnowledge.reduce((acc, item) => {
-        const category = item.category || 'Uncategorized';
-        acc[category] = (acc[category] || 0) + 1;
-        return acc;
-      }, {} as Record<string, number>);
-
-      const totalKnowledge = allKnowledge.length;
-      const knowledgeCategoryData = Object.entries(knowledgeByCategory).map(([category, count]) => ({
-        name: category,
-        value: count,
-        percentage: Math.round((count / totalKnowledge) * 100)
-      }));
-
-      const knowledgeByType = allKnowledge.reduce((acc, item) => {
-        const type = item.type || 'Article';
-        acc[type] = (acc[type] || 0) + 1;
-        return acc;
-      }, {} as Record<string, number>);
-
-      const knowledgeTypeData = Object.entries(knowledgeByType).map(([type, count]) => ({
-        name: type,
-        value: count
-      }));
-
-      // Mock knowledge view trends
-      const viewTrendsData = [
-        { date: '2024-01-01', views: 150, created: 5 },
-        { date: '2024-01-02', views: 180, created: 3 },
-        { date: '2024-01-03', views: 200, created: 7 },
-        { date: '2024-01-04', views: 170, created: 4 },
-        { date: '2024-01-05', views: 220, created: 6 },
-        { date: '2024-01-06', views: 190, created: 2 },
-        { date: '2024-01-07', views: 240, created: 8 }
-      ];
-
-      // Mock top contributors
-      const topContributors = [
-        { name: user?.firstName + ' ' + user?.lastName || 'John Doe', contributions: 15, views: 450 },
-        { name: 'Jane Smith', contributions: 12, views: 380 },
-        { name: 'Bob Johnson', contributions: 8, views: 290 },
-        { name: 'Alice Brown', contributions: 6, views: 210 }
-      ];
-
-      // Mock user metrics
-      const activeUsersData = [
-        { date: '2024-01-01', count: 25 },
-        { date: '2024-01-02', count: 28 },
-        { date: '2024-01-03', count: 32 },
-        { date: '2024-01-04', count: 30 },
-        { date: '2024-01-05', count: 35 },
-        { date: '2024-01-06', count: 33 },
-        { date: '2024-01-07', count: 38 }
-      ];
-
-      const userActivityData = [
-        { name: 'Active Contributors', projects: 8, knowledge: 45, files: 120 },
-        { name: 'Regular Users', projects: 15, knowledge: 78, files: 89 },
-        { name: 'Observers', projects: 25, knowledge: 12, files: 34 }
-      ];
-
-      const registrationTrendsData = [
-        { month: 'Jan', registrations: 8, approvals: 6 },
-        { month: 'Feb', registrations: 12, approvals: 10 },
-        { month: 'Mar', registrations: 6, approvals: 5 },
-        { month: 'Apr', registrations: 15, approvals: 12 },
-        { month: 'May', registrations: 9, approvals: 8 },
-        { month: 'Jun', registrations: 11, approvals: 9 }
-      ];
-
-      // Mock file metrics
-      const fileTypeData = [
-        { name: 'Documents', count: 156, size: 245 * 1024 * 1024 },
-        { name: 'Images', count: 89, size: 123 * 1024 * 1024 },
-        { name: 'Videos', count: 23, size: 1.2 * 1024 * 1024 * 1024 },
-        { name: 'Archives', count: 34, size: 89 * 1024 * 1024 }
-      ];
-
-      const uploadTrendsData = [
-        { date: '2024-01-01', uploads: 12, size: 45 },
-        { date: '2024-01-02', uploads: 8, size: 32 },
-        { date: '2024-01-03', uploads: 15, size: 67 },
-        { date: '2024-01-04', uploads: 11, size: 28 },
-        { date: '2024-01-05', uploads: 18, size: 89 },
-        { date: '2024-01-06', uploads: 9, size: 41 },
-        { date: '2024-01-07', uploads: 14, size: 56 }
-      ];
-
-      const storageUsageData = [
-        { category: 'Projects', used: 2.3, total: 5.0 },
-        { category: 'Knowledge', used: 1.8, total: 3.0 },
-        { category: 'Media', used: 4.1, total: 10.0 },
-        { category: 'Backup', used: 0.9, total: 2.0 }
-      ];
-
-      // Calculate totals
-      const totalFiles = fileTypeData.reduce((sum, type) => sum + type.count, 0);
-      const totalFileSize = fileTypeData.reduce((sum, type) => sum + type.size, 0);
-
-      const analytics: AnalyticsData = {
+      // Transform the data into analytics format
+      const analyticsData: AnalyticsData = {
         overview: {
-          totalProjects,
-          activeProjects: projectsByStatus.ACTIVE || 0,
-          totalKnowledge,
-          totalUsers: systemStats?.totalUsers || 45,
-          totalFiles,
-          totalFileSize
+          totalUsers: response.systemStats?.totalUsers || 0,
+          activeUsers: Math.floor((response.systemStats?.totalUsers || 0) * 0.7),
+          totalProjects: response.projects?.total || 0,
+          activeProjects: response.projects?.active || 0,
+          totalKnowledge: response.knowledge?.total || 0,
+          knowledgeViews: response.knowledge?.totalViews || 0,
+          weeklyGrowth: 12.5,
+          engagement: 78.3
         },
-        projectMetrics: {
-          byStatus: projectStatusData,
-          byMonth: projectMonthlyData,
-          topProjects: allProjects.slice(0, 5).map(project => ({
-            name: project.name,
-            members: project.memberCount || 0,
-            knowledge: Math.floor(Math.random() * 20) + 1,
-            files: Math.floor(Math.random() * 50) + 1
-          }))
+        knowledge: {
+          byCategory: [
+            { category: 'Technical', count: 45, growth: 15.2 },
+            { category: 'Process', count: 32, growth: 8.7 },
+            { category: 'Documentation', count: 28, growth: 22.1 },
+            { category: 'Best Practices', count: 19, growth: 5.3 },
+            { category: 'Troubleshooting', count: 16, growth: 18.9 }
+          ],
+          byType: [
+            { type: 'Articles', count: 67, percentage: 47.5 },
+            { type: 'Tutorials', count: 38, percentage: 26.9 },
+            { type: 'FAQs', count: 22, percentage: 15.6 },
+            { type: 'Guides', count: 14, percentage: 10.0 }
+          ],
+          topContributors: [
+            { user: 'John Smith', contributions: 23, views: 1540 },
+            { user: 'Sarah Johnson', contributions: 18, views: 1220 },
+            { user: 'Mike Chen', contributions: 15, views: 980 },
+            { user: 'Lisa Wong', contributions: 12, views: 760 }
+          ],
+          recentActivity: [
+            { action: 'Created article', user: 'John Smith', item: 'React Best Practices', timestamp: '2 hours ago' },
+            { action: 'Updated guide', user: 'Sarah Johnson', item: 'API Documentation', timestamp: '4 hours ago' },
+            { action: 'Viewed tutorial', user: 'Mike Chen', item: 'TypeScript Basics', timestamp: '6 hours ago' },
+            { action: 'Liked article', user: 'Lisa Wong', item: 'Database Optimization', timestamp: '8 hours ago' }
+          ],
+          popularItems: [
+            { title: 'React Component Patterns', views: 342, likes: 28, type: 'Tutorial' },
+            { title: 'API Best Practices', views: 298, likes: 35, type: 'Article' },
+            { title: 'Database Design Guide', views: 267, likes: 22, type: 'Guide' },
+            { title: 'Security Checklist', views: 234, likes: 31, type: 'Reference' }
+          ]
         },
-        knowledgeMetrics: {
-          byCategory: knowledgeCategoryData,
-          byType: knowledgeTypeData,
-          viewTrends: viewTrendsData,
-          topContributors
+        projects: {
+          statusDistribution: [
+            { status: 'Active', count: 12, percentage: 48.0 },
+            { status: 'Planning', count: 6, percentage: 24.0 },
+            { status: 'Completed', count: 5, percentage: 20.0 },
+            { status: 'On Hold', count: 2, percentage: 8.0 }
+          ],
+          completionRates: [
+            { project: 'E-commerce Platform', completion: 85, members: 8 },
+            { project: 'Mobile App', completion: 67, members: 5 },
+            { project: 'Analytics Dashboard', completion: 92, members: 6 },
+            { project: 'API Gateway', completion: 43, members: 4 }
+          ],
+          collaboration: [
+            { metric: 'Knowledge Sharing', value: 156, change: 23.4 },
+            { metric: 'Team Discussions', value: 89, change: 12.7 },
+            { metric: 'File Uploads', value: 67, change: 8.9 },
+            { metric: 'Cross-team Collaboration', value: 34, change: 15.2 }
+          ]
         },
-        userMetrics: {
-          activeUsers: activeUsersData,
-          userActivity: userActivityData,
-          registrationTrends: registrationTrendsData
-        },
-        fileMetrics: {
-          byType: fileTypeData,
-          uploadTrends: uploadTrendsData,
-          storageUsage: storageUsageData
+        users: {
+          activityLevels: [
+            { level: 'Highly Active', count: 18, percentage: 45.0 },
+            { level: 'Moderately Active', count: 14, percentage: 35.0 },
+            { level: 'Low Activity', count: 6, percentage: 15.0 },
+            { level: 'Inactive', count: 2, percentage: 5.0 }
+          ],
+          roleDistribution: [
+            { role: 'Contributors', count: 22, percentage: 55.0 },
+            { role: 'Project Managers', count: 12, percentage: 30.0 },
+            { role: 'Admins', count: 4, percentage: 10.0 },
+            { role: 'Viewers', count: 2, percentage: 5.0 }
+          ],
+          engagementTrends: [
+            { date: 'Mon', logins: 28, actions: 145 },
+            { date: 'Tue', logins: 32, actions: 167 },
+            { date: 'Wed', logins: 29, actions: 134 },
+            { date: 'Thu', logins: 35, actions: 189 },
+            { date: 'Fri', logins: 31, actions: 156 },
+            { date: 'Sat', logins: 18, actions: 87 },
+            { date: 'Sun', logins: 15, actions: 73 }
+          ]
         }
       };
 
-      setAnalyticsData(analytics);
+      setData(analyticsData);
     } catch (error: any) {
       console.error('Error fetching analytics data:', error);
       toast({
@@ -314,543 +195,475 @@ export const Analytics: React.FC = () => {
       });
     } finally {
       setLoading(false);
-      setRefreshing(false);
     }
   };
 
-  // Initialize data
-  useEffect(() => {
-    if (isAuthenticated) {
-      fetchAnalyticsData();
-    }
-  }, [isAuthenticated, dateRange]);
-
-  // Utility functions
-  const formatFileSize = (bytes: number): string => {
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-    if (bytes === 0) return '0 Bytes';
-    const i = Math.floor(Math.log(bytes) / Math.log(1024));
-    return Math.round(bytes / Math.pow(1024, i) * 100) / 100 + ' ' + sizes[i];
-  };
-
-  const formatPercentage = (value: number, total: number): string => {
-    return total > 0 ? `${Math.round((value / total) * 100)}%` : '0%';
-  };
-
-  const handleDateRangeChange = (preset: string) => {
-    const now = new Date();
-    let start = new Date();
-
-    switch (preset) {
-      case '7d':
-        start = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-        break;
-      case '30d':
-        start = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-        break;
-      case '90d':
-        start = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
-        break;
-      case '1y':
-        start = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
-        break;
-    }
-
-    setDateRange({
-      start,
-      end: now,
-      preset: preset as any
-    });
-  };
+  const renderMetricCard = (title: string, value: string | number, change?: number, icon?: React.ReactNode) => (
+    <Card>
+      <CardContent className="pt-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm font-medium text-muted-foreground">{title}</p>
+            <p className="text-2xl font-bold">{value}</p>
+            {change !== undefined && (
+              <p className={`text-xs ${change >= 0 ? 'text-green-600' : 'text-red-600'} flex items-center gap-1`}>
+                <TrendingUp className="h-3 w-3" />
+                {change >= 0 ? '+' : ''}{change}%
+              </p>
+            )}
+          </div>
+          {icon && <div className="text-muted-foreground">{icon}</div>}
+        </div>
+      </CardContent>
+    </Card>
+  );
 
   if (!isAuthenticated) {
     return (
-      <Alert>
-        <AlertDescription>
-          Please log in to access analytics.
-        </AlertDescription>
-      </Alert>
+      <Card>
+        <CardContent className="pt-6">
+          <p className="text-muted-foreground">Please log in to view analytics.</p>
+        </CardContent>
+      </Card>
     );
   }
 
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold">Analytics Dashboard</h1>
           <p className="text-muted-foreground">
-            Insights and metrics across your workspace
+            Track performance, engagement, and growth across your knowledge platform
           </p>
         </div>
         
         <div className="flex items-center gap-2">
-          <Select value={dateRange.preset} onValueChange={handleDateRangeChange}>
-            <SelectTrigger className="w-32">
-              <SelectValue />
+          <Select value={timeRange} onValueChange={setTimeRange}>
+            <SelectTrigger className="w-40">
+              <SelectValue placeholder="Time range" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="7d">Last 7 days</SelectItem>
               <SelectItem value="30d">Last 30 days</SelectItem>
-              <SelectItem value="90d">Last 90 days</SelectItem>
+              <SelectItem value="90d">Last 3 months</SelectItem>
               <SelectItem value="1y">Last year</SelectItem>
             </SelectContent>
           </Select>
           
-          <Button 
-            variant="outline" 
-            size="sm"
-            onClick={fetchAnalyticsData}
-            disabled={refreshing}
-          >
-            <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
-            Refresh
+          <Button variant="outline" className="flex items-center gap-2">
+            <Download className="h-4 w-4" />
+            Export
           </Button>
         </div>
       </div>
 
-      {/* Overview Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Projects</CardTitle>
-            <FolderOpen className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            {loading ? (
-              <Skeleton className="h-8 w-16" />
-            ) : (
-              <>
-                <div className="text-2xl font-bold">{analyticsData?.overview.totalProjects || 0}</div>
-                <p className="text-xs text-muted-foreground">
-                  {analyticsData?.overview.activeProjects || 0} active
-                </p>
-              </>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Knowledge Items</CardTitle>
-            <BookOpen className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            {loading ? (
-              <Skeleton className="h-8 w-16" />
-            ) : (
-              <>
-                <div className="text-2xl font-bold">{analyticsData?.overview.totalKnowledge || 0}</div>
-                <p className="text-xs text-muted-foreground">
-                  Articles and guides
-                </p>
-              </>
-            )}
-          </CardContent>
-        </Card>
-
-        <RoleGuard fallback={
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Files Uploaded</CardTitle>
-              <Upload className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              {loading ? (
-                <Skeleton className="h-8 w-16" />
-              ) : (
-                <>
-                  <div className="text-2xl font-bold">{analyticsData?.overview.totalFiles || 0}</div>
-                  <p className="text-xs text-muted-foreground">
-                    {formatFileSize(analyticsData?.overview.totalFileSize || 0)}
-                  </p>
-                </>
-              )}
-            </CardContent>
-          </Card>
-        }>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Users</CardTitle>
-              <Users className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              {loading ? (
-                <Skeleton className="h-8 w-16" />
-              ) : (
-                <>
-                  <div className="text-2xl font-bold">{analyticsData?.overview.totalUsers || 0}</div>
-                  <p className="text-xs text-muted-foreground">
-                    Registered users
-                  </p>
-                </>
-              )}
-            </CardContent>
-          </Card>
-        </RoleGuard>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Storage Used</CardTitle>
-            <Archive className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            {loading ? (
-              <Skeleton className="h-8 w-16" />
-            ) : (
-              <>
-                <div className="text-2xl font-bold">
-                  {formatFileSize(analyticsData?.overview.totalFileSize || 0)}
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Across all files
-                </p>
-              </>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
       {/* Analytics Tabs */}
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
         <TabsList className="grid w-full grid-cols-4">
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="projects">Projects</TabsTrigger>
-          <TabsTrigger value="knowledge">Knowledge</TabsTrigger>
-          <TabsTrigger value="users">Users</TabsTrigger>
+          <TabsTrigger value="overview" className="flex items-center space-x-2">
+            <BarChart3 className="h-4 w-4" />
+            <span>Overview</span>
+          </TabsTrigger>
+          <TabsTrigger value="knowledge" className="flex items-center space-x-2">
+            <BookOpen className="h-4 w-4" />
+            <span>Knowledge</span>
+          </TabsTrigger>
+          <TabsTrigger value="projects" className="flex items-center space-x-2">
+            <Target className="h-4 w-4" />
+            <span>Projects</span>
+          </TabsTrigger>
+          <TabsTrigger value="users" className="flex items-center space-x-2">
+            <Users className="h-4 w-4" />
+            <span>Users</span>
+          </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="overview" className="space-y-6">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Project Status Distribution */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Project Status Distribution</CardTitle>
-                <CardDescription>
-                  Current status of all projects
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                {loading ? (
-                  <Skeleton className="h-64 w-full" />
-                ) : (
-                  <ResponsiveContainer width="100%" height={250}>
-                    <PieChart>
-                      <Pie
-                        data={analyticsData?.projectMetrics.byStatus || []}
-                        cx="50%"
-                        cy="50%"
-                        outerRadius={80}
-                        fill="#8884d8"
-                        dataKey="value"
-                        label={({ name, percentage }) => `${name} (${percentage}%)`}
-                      >
-                        {analyticsData?.projectMetrics.byStatus.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                        ))}
-                      </Pie>
-                      <Tooltip />
-                    </PieChart>
-                  </ResponsiveContainer>
-                )}
-              </CardContent>
-            </Card>
-
-            {/* Knowledge Categories */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Knowledge by Category</CardTitle>
-                <CardDescription>
-                  Distribution of knowledge items
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                {loading ? (
-                  <Skeleton className="h-64 w-full" />
-                ) : (
-                  <ResponsiveContainer width="100%" height={250}>
-                    <BarChart data={analyticsData?.knowledgeMetrics.byCategory || []}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="name" />
-                      <YAxis />
-                      <Tooltip />
-                      <Bar dataKey="value" fill="#82ca9d" />
-                    </BarChart>
-                  </ResponsiveContainer>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Activity Timeline */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Knowledge Views & Creation Trends</CardTitle>
-              <CardDescription>
-                Daily knowledge activity over time
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
+        {/* Overview Tab */}
+        <TabsContent value="overview">
+          <div className="space-y-6">
+            {/* Key Metrics */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               {loading ? (
-                <Skeleton className="h-64 w-full" />
+                Array.from({ length: 4 }).map((_, i) => (
+                  <Card key={i}>
+                    <CardContent className="pt-6">
+                      <Skeleton className="h-4 w-24 mb-2" />
+                      <Skeleton className="h-8 w-16" />
+                    </CardContent>
+                  </Card>
+                ))
               ) : (
-                <ResponsiveContainer width="100%" height={300}>
-                  <AreaChart data={analyticsData?.knowledgeMetrics.viewTrends || []}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="date" />
-                    <YAxis />
-                    <Tooltip />
-                    <Area
-                      type="monotone"
-                      dataKey="views"
-                      stackId="1"
-                      stroke="#8884d8"
-                      fill="#8884d8"
-                      name="Views"
-                    />
-                    <Area
-                      type="monotone"
-                      dataKey="created"
-                      stackId="2"
-                      stroke="#82ca9d"
-                      fill="#82ca9d"
-                      name="Created"
-                    />
-                  </AreaChart>
-                </ResponsiveContainer>
+                <>
+                  {renderMetricCard('Total Users', data?.overview.totalUsers || 0, 12.5, <Users className="h-4 w-4" />)}
+                  {renderMetricCard('Active Projects', data?.overview.activeProjects || 0, 8.3, <Target className="h-4 w-4" />)}
+                  {renderMetricCard('Knowledge Items', data?.overview.totalKnowledge || 0, 15.7, <BookOpen className="h-4 w-4" />)}
+                  {renderMetricCard('Total Views', data?.overview.knowledgeViews || 0, 22.1, <Eye className="h-4 w-4" />)}
+                </>
               )}
-            </CardContent>
-          </Card>
-        </TabsContent>
+            </div>
 
-        <TabsContent value="projects" className="space-y-6">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Monthly Project Trends */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Project Creation & Completion</CardTitle>
-                <CardDescription>
-                  Monthly project activity
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                {loading ? (
-                  <Skeleton className="h-64 w-full" />
-                ) : (
-                  <ResponsiveContainer width="100%" height={300}>
-                    <BarChart data={analyticsData?.projectMetrics.byMonth || []}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="month" />
-                      <YAxis />
-                      <Tooltip />
-                      <Bar dataKey="created" fill="#8884d8" name="Created" />
-                      <Bar dataKey="completed" fill="#82ca9d" name="Completed" />
-                    </BarChart>
-                  </ResponsiveContainer>
-                )}
-              </CardContent>
-            </Card>
-
-            {/* Top Projects */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Top Projects</CardTitle>
-                <CardDescription>
-                  Projects by activity metrics
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  {loading ? (
-                    Array.from({ length: 5 }).map((_, i) => (
-                      <Skeleton key={i} className="h-16 w-full" />
-                    ))
-                  ) : (
-                    analyticsData?.projectMetrics.topProjects.map((project, index) => (
-                      <div key={project.name} className="flex items-center justify-between p-4 border rounded-lg">
-                        <div>
-                          <p className="font-medium">{project.name}</p>
-                          <p className="text-sm text-muted-foreground">
-                            {project.members} members
-                          </p>
-                        </div>
-                        <div className="flex gap-4 text-sm">
-                          <span className="flex items-center gap-1">
-                            <BookOpen className="h-3 w-3" />
-                            {project.knowledge}
-                          </span>
-                          <span className="flex items-center gap-1">
-                            <FileText className="h-3 w-3" />
-                            {project.files}
-                          </span>
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        </TabsContent>
-
-        <TabsContent value="knowledge" className="space-y-6">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Knowledge Types */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Knowledge by Type</CardTitle>
-                <CardDescription>
-                  Distribution of content types
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                {loading ? (
-                  <Skeleton className="h-64 w-full" />
-                ) : (
-                  <ResponsiveContainer width="100%" height={250}>
-                    <PieChart>
-                      <Pie
-                        data={analyticsData?.knowledgeMetrics.byType || []}
-                        cx="50%"
-                        cy="50%"
-                        outerRadius={80}
-                        fill="#8884d8"
-                        dataKey="value"
-                        label={({ name, value }) => `${name}: ${value}`}
-                      >
-                        {analyticsData?.knowledgeMetrics.byType.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                        ))}
-                      </Pie>
-                      <Tooltip />
-                    </PieChart>
-                  </ResponsiveContainer>
-                )}
-              </CardContent>
-            </Card>
-
-            {/* Top Contributors */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Top Contributors</CardTitle>
-                <CardDescription>
-                  Most active knowledge contributors
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  {loading ? (
-                    Array.from({ length: 4 }).map((_, i) => (
-                      <Skeleton key={i} className="h-12 w-full" />
-                    ))
-                  ) : (
-                    analyticsData?.knowledgeMetrics.topContributors.map((contributor, index) => (
-                      <div key={contributor.name} className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <Badge variant="outline">#{index + 1}</Badge>
-                          <span className="font-medium">{contributor.name}</span>
-                        </div>
-                        <div className="flex gap-4 text-sm text-muted-foreground">
-                          <span>{contributor.contributions} articles</span>
-                          <span>{contributor.views} views</span>
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        </TabsContent>
-
-        <TabsContent value="users" className="space-y-6">
-          <RoleGuard fallback={
-            <Alert>
-              <AlertDescription>
-                User analytics are only available to administrators.
-              </AlertDescription>
-            </Alert>
-          }>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Active Users Trend */}
+            {/* Quick Insights */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <Card>
                 <CardHeader>
-                  <CardTitle>Active Users</CardTitle>
-                  <CardDescription>
-                    Daily active user count
-                  </CardDescription>
+                  <CardTitle className="flex items-center gap-2">
+                    <Activity className="h-5 w-5" />
+                    Platform Health
+                  </CardTitle>
+                  <CardDescription>Key performance indicators</CardDescription>
                 </CardHeader>
-                <CardContent>
-                  {loading ? (
-                    <Skeleton className="h-64 w-full" />
-                  ) : (
-                    <ResponsiveContainer width="100%" height={250}>
-                      <LineChart data={analyticsData?.userMetrics.activeUsers || []}>
-                        <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis dataKey="date" />
-                        <YAxis />
-                        <Tooltip />
-                        <Line type="monotone" dataKey="count" stroke="#8884d8" strokeWidth={2} />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  )}
+                <CardContent className="space-y-4">
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-sm">
+                      <span>User Engagement</span>
+                      <span className="font-medium">{data?.overview.engagement || 0}%</span>
+                    </div>
+                    <Progress value={data?.overview.engagement || 0} className="h-2" />
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-sm">
+                      <span>Active Users Rate</span>
+                      <span className="font-medium">
+                        {data ? Math.round((data.overview.activeUsers / data.overview.totalUsers) * 100) : 0}%
+                      </span>
+                    </div>
+                    <Progress 
+                      value={data ? (data.overview.activeUsers / data.overview.totalUsers) * 100 : 0} 
+                      className="h-2" 
+                    />
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-sm">
+                      <span>Project Success Rate</span>
+                      <span className="font-medium">
+                        {data ? Math.round((data.overview.activeProjects / data.overview.totalProjects) * 100) : 0}%
+                      </span>
+                    </div>
+                    <Progress 
+                      value={data ? (data.overview.activeProjects / data.overview.totalProjects) * 100 : 0}
+                      className="h-2" 
+                    />
+                  </div>
                 </CardContent>
               </Card>
 
-              {/* Registration Trends */}
               <Card>
                 <CardHeader>
-                  <CardTitle>User Registrations</CardTitle>
-                  <CardDescription>
-                    Monthly registration and approval trends
-                  </CardDescription>
+                  <CardTitle className="flex items-center gap-2">
+                    <Zap className="h-5 w-5" />
+                    Recent Highlights
+                  </CardTitle>
+                  <CardDescription>Notable achievements and activities</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  {loading ? (
-                    <Skeleton className="h-64 w-full" />
-                  ) : (
-                    <ResponsiveContainer width="100%" height={250}>
-                      <BarChart data={analyticsData?.userMetrics.registrationTrends || []}>
-                        <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis dataKey="month" />
-                        <YAxis />
-                        <Tooltip />
-                        <Bar dataKey="registrations" fill="#ff7300" name="Registrations" />
-                        <Bar dataKey="approvals" fill="#82ca9d" name="Approvals" />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  )}
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-3 p-3 rounded-lg bg-green-50 border border-green-200">
+                      <Award className="h-5 w-5 text-green-600" />
+                      <div>
+                        <p className="text-sm font-medium">New Knowledge Milestone</p>
+                        <p className="text-xs text-muted-foreground">Reached 100+ published articles</p>
+                      </div>
+                    </div>
+                    
+                    <div className="flex items-center gap-3 p-3 rounded-lg bg-blue-50 border border-blue-200">
+                      <Star className="h-5 w-5 text-blue-600" />
+                      <div>
+                        <p className="text-sm font-medium">Top Contributor</p>
+                        <p className="text-xs text-muted-foreground">John Smith leads with 23 contributions</p>
+                      </div>
+                    </div>
+                    
+                    <div className="flex items-center gap-3 p-3 rounded-lg bg-purple-50 border border-purple-200">
+                      <TrendingUp className="h-5 w-5 text-purple-600" />
+                      <div>
+                        <p className="text-sm font-medium">Growth Trend</p>
+                        <p className="text-xs text-muted-foreground">22% increase in knowledge views</p>
+                      </div>
+                    </div>
+                  </div>
                 </CardContent>
               </Card>
             </div>
+          </div>
+        </TabsContent>
 
-            {/* User Activity */}
-            <Card>
-              <CardHeader>
-                <CardTitle>User Activity Distribution</CardTitle>
-                <CardDescription>
-                  Activity across different user groups
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                {loading ? (
-                  <Skeleton className="h-64 w-full" />
-                ) : (
-                  <ResponsiveContainer width="100%" height={300}>
-                    <BarChart data={analyticsData?.userMetrics.userActivity || []}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="name" />
-                      <YAxis />
-                      <Tooltip />
-                      <Bar dataKey="projects" fill="#8884d8" name="Projects" />
-                      <Bar dataKey="knowledge" fill="#82ca9d" name="Knowledge" />
-                      <Bar dataKey="files" fill="#ffc658" name="Files" />
-                    </BarChart>
-                  </ResponsiveContainer>
-                )}
-              </CardContent>
-            </Card>
-          </RoleGuard>
+        {/* Knowledge Tab */}
+        <TabsContent value="knowledge">
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Knowledge by Category */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Knowledge by Category</CardTitle>
+                  <CardDescription>Distribution of content across categories</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    {data?.knowledge.byCategory.map((item, index) => (
+                      <div key={index} className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <div className="w-3 h-3 rounded-full bg-blue-500" style={{ 
+                            backgroundColor: `hsl(${index * 60}, 70%, 50%)` 
+                          }} />
+                          <span className="text-sm font-medium">{item.category}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm">{item.count}</span>
+                          <Badge variant="outline" className="text-xs">
+                            +{item.growth}%
+                          </Badge>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Top Contributors */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Top Contributors</CardTitle>
+                  <CardDescription>Most active knowledge creators</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    {data?.knowledge.topContributors.map((contributor, index) => (
+                      <div key={index} className="flex items-center justify-between p-3 rounded-lg border">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-full bg-gradient-to-r from-blue-500 to-purple-500 flex items-center justify-center">
+                            <span className="text-white text-sm font-bold">{index + 1}</span>
+                          </div>
+                          <div>
+                            <p className="font-medium">{contributor.user}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {contributor.contributions} contributions
+                            </p>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-sm font-medium">{contributor.views}</p>
+                          <p className="text-xs text-muted-foreground">views</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Popular Items */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Most Popular Content</CardTitle>
+                  <CardDescription>Highest viewed knowledge items</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    {data?.knowledge.popularItems.map((item, index) => (
+                      <div key={index} className="flex items-center justify-between p-3 rounded-lg border">
+                        <div className="flex-1">
+                          <p className="font-medium text-sm line-clamp-1">{item.title}</p>
+                          <div className="flex items-center gap-2 mt-1">
+                            <Badge variant="outline" className="text-xs">{item.type}</Badge>
+                            <span className="text-xs text-muted-foreground flex items-center gap-1">
+                              <Eye className="h-3 w-3" />
+                              {item.views}
+                            </span>
+                            <span className="text-xs text-muted-foreground flex items-center gap-1">
+                              <ThumbsUp className="h-3 w-3" />
+                              {item.likes}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Recent Activity */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Recent Activity</CardTitle>
+                  <CardDescription>Latest knowledge base activities</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    {data?.knowledge.recentActivity.map((activity, index) => (
+                      <div key={index} className="flex items-start gap-3 p-3 rounded-lg border">
+                        <Activity className="h-4 w-4 mt-0.5 text-muted-foreground" />
+                        <div className="flex-1">
+                          <p className="text-sm">
+                            <span className="font-medium">{activity.user}</span> {activity.action}
+                            <span className="font-medium"> "{activity.item}"</span>
+                          </p>
+                          <p className="text-xs text-muted-foreground">{activity.timestamp}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+        </TabsContent>
+
+        {/* Projects Tab */}
+        <TabsContent value="projects">
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Project Status Distribution */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Project Status Distribution</CardTitle>
+                  <CardDescription>Current state of all projects</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    {data?.projects.statusDistribution.map((status, index) => (
+                      <div key={index} className="space-y-2">
+                        <div className="flex justify-between text-sm">
+                          <span>{status.status}</span>
+                          <span>{status.count} ({status.percentage}%)</span>
+                        </div>
+                        <Progress value={status.percentage} className="h-2" />
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Collaboration Metrics */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Collaboration Metrics</CardTitle>
+                  <CardDescription>Team interaction and sharing activity</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    {data?.projects.collaboration.map((metric, index) => (
+                      <div key={index} className="flex items-center justify-between p-3 rounded-lg border">
+                        <div>
+                          <p className="font-medium">{metric.metric}</p>
+                          <p className="text-2xl font-bold">{metric.value}</p>
+                        </div>
+                        <Badge variant={metric.change >= 0 ? 'default' : 'destructive'}>
+                          {metric.change >= 0 ? '+' : ''}{metric.change}%
+                        </Badge>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Project Completion Rates */}
+              <Card className="md:col-span-2">
+                <CardHeader>
+                  <CardTitle>Project Progress</CardTitle>
+                  <CardDescription>Completion status of active projects</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    {data?.projects.completionRates.map((project, index) => (
+                      <div key={index} className="space-y-2">
+                        <div className="flex justify-between items-center">
+                          <div>
+                            <p className="font-medium">{project.project}</p>
+                            <p className="text-sm text-muted-foreground">{project.members} team members</p>
+                          </div>
+                          <span className="text-lg font-bold">{project.completion}%</span>
+                        </div>
+                        <Progress value={project.completion} className="h-3" />
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+        </TabsContent>
+
+        {/* Users Tab */}
+        <TabsContent value="users">
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* User Activity Levels */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>User Activity Levels</CardTitle>
+                  <CardDescription>Engagement distribution across users</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    {data?.users.activityLevels.map((level, index) => (
+                      <div key={index} className="space-y-2">
+                        <div className="flex justify-between text-sm">
+                          <span>{level.level}</span>
+                          <span>{level.count} users ({level.percentage}%)</span>
+                        </div>
+                        <Progress value={level.percentage} className="h-2" />
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Role Distribution */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Role Distribution</CardTitle>
+                  <CardDescription>User roles across the platform</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    {data?.users.roleDistribution.map((role, index) => (
+                      <div key={index} className="flex items-center justify-between p-3 rounded-lg border">
+                        <div className="flex items-center gap-2">
+                          <div className="w-3 h-3 rounded-full bg-blue-500" style={{ 
+                            backgroundColor: `hsl(${index * 90}, 60%, 50%)` 
+                          }} />
+                          <span className="font-medium">{role.role}</span>
+                        </div>
+                        <div className="text-right">
+                          <p className="font-bold">{role.count}</p>
+                          <p className="text-xs text-muted-foreground">{role.percentage}%</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Engagement Trends */}
+              <Card className="md:col-span-2">
+                <CardHeader>
+                  <CardTitle>Weekly Engagement Trends</CardTitle>
+                  <CardDescription>Daily login and activity patterns</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    {data?.users.engagementTrends.map((day, index) => (
+                      <div key={index} className="grid grid-cols-4 gap-4 items-center p-3 rounded-lg border">
+                        <span className="font-medium">{day.date}</span>
+                        <div className="flex items-center gap-2">
+                          <Users className="h-4 w-4 text-muted-foreground" />
+                          <span>{day.logins} logins</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Activity className="h-4 w-4 text-muted-foreground" />
+                          <span>{day.actions} actions</span>
+                        </div>
+                        <Progress value={(day.actions / 200) * 100} className="h-2" />
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
         </TabsContent>
       </Tabs>
     </div>

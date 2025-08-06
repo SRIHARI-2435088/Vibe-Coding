@@ -280,6 +280,62 @@ export const knowledgeApi = {
       console.error('Failed to get knowledge by project:', error);
       throw handleApiError(error, 'Failed to load project knowledge items');
     }
+  },
+
+  /**
+   * Search knowledge items (enhanced version for KnowledgeBase)
+   */
+  async searchKnowledgeItems(params: any): Promise<{ items: KnowledgeItem[]; totalPages: number }> {
+    try {
+      const searchParams = new URLSearchParams();
+      
+      if (params.search) searchParams.append('search', params.search);
+      if (params.type) searchParams.append('type', params.type);
+      if (params.category) searchParams.append('category', params.category);
+      if (params.difficulty) searchParams.append('difficulty', params.difficulty);
+      if (params.status) searchParams.append('status', params.status);
+      if (params.tags && params.tags.length > 0) searchParams.append('tags', params.tags.join(','));
+      if (params.projectId) searchParams.append('projectId', params.projectId);
+      if (params.authorId) searchParams.append('authorId', params.authorId);
+      if (params.dateRange) searchParams.append('dateRange', params.dateRange);
+      if (params.sortBy) searchParams.append('sortBy', params.sortBy);
+      if (params.sortOrder) searchParams.append('sortOrder', params.sortOrder);
+      if (params.isPublic !== undefined) searchParams.append('isPublic', params.isPublic.toString());
+      if (params.page) searchParams.append('page', params.page.toString());
+      if (params.limit) searchParams.append('limit', params.limit.toString());
+
+      const response = await apiClient.get<{ success: boolean; data: { items: KnowledgeItem[]; totalPages: number } }>(`/knowledge?${searchParams}`);
+      return response.data.data;
+    } catch (error) {
+      console.error('Failed to search knowledge items:', error);
+      throw handleApiError(error, 'Failed to search knowledge items');
+    }
+  },
+
+  /**
+   * Get featured knowledge items
+   */
+  async getFeaturedKnowledgeItems(): Promise<{ items: KnowledgeItem[] }> {
+    try {
+      const response = await apiClient.get<{ success: boolean; data: { items: KnowledgeItem[] } }>('/knowledge/featured');
+      return response.data.data;
+    } catch (error) {
+      console.error('Failed to get featured knowledge items:', error);
+      throw handleApiError(error, 'Failed to load featured knowledge items');
+    }
+  },
+
+  /**
+   * Get knowledge statistics
+   */
+  async getKnowledgeStats(): Promise<any> {
+    try {
+      const response = await apiClient.get<{ success: boolean; data: any }>('/knowledge/stats');
+      return response.data.data;
+    } catch (error) {
+      console.error('Failed to get knowledge stats:', error);
+      throw handleApiError(error, 'Failed to load knowledge statistics');
+    }
   }
 };
 

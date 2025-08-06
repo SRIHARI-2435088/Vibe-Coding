@@ -218,6 +218,131 @@ router.get('/system-stats', requireAdmin, async (req, res) => {
 });
 
 /**
+ * @route GET /api/admin/dashboard-stats
+ * @desc Get comprehensive dashboard statistics
+ * @access Private (Authenticated users)
+ */
+router.get('/dashboard-stats', async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const userRole = req.user.role;
+    
+    // Basic stats for all users
+    const [
+      userProjects,
+      totalKnowledge,
+      userKnowledge,
+      recentKnowledge,
+      myRecentActivity
+    ] = await Promise.all([
+      // Projects user is member of
+      prisma.projectMember.count({
+        where: { userId }
+      }),
+      // Total knowledge items
+      prisma.knowledgeItem.count(),
+      // Knowledge items created by user
+      prisma.knowledgeItem.count({
+        where: { authorId: userId }
+      }),
+      // Recent knowledge items (last 7 days)
+      prisma.knowledgeItem.count({
+        where: {
+          createdAt: {
+            gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
+          }
+        }
+      }),
+      // User's recent activity
+      prisma.activity.findMany({
+        where: { userId },
+        take: 5,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          knowledgeItem: {
+            select: { title: true }
+          }
+        }
+      })
+    ]);
+
+    // Basic dashboard data
+    const dashboardData = {
+      user: {
+        projects: userProjects,
+        knowledgeContributions: userKnowledge
+      },
+      overview: {
+        totalKnowledge,
+        recentKnowledge
+      },
+      activity: myRecentActivity.map(activity => ({
+        id: activity.id,
+        type: activity.type,
+        description: activity.description,
+        timestamp: activity.createdAt,
+        knowledgeTitle: activity.knowledgeItem?.title
+      }))
+    };
+
+    // Add admin-specific data if user is admin or project manager
+    if (userRole === 'ADMIN' || userRole === 'PROJECT_MANAGER') {
+      const [
+        totalUsers,
+        activeUsers,
+        pendingUsers,
+        totalProjects,
+        activeProjects,
+        recentActivity
+      ] = await Promise.all([
+        prisma.user.count(),
+        prisma.user.count({ where: { isActive: true } }),
+        prisma.user.count({ where: { isActive: false } }),
+        prisma.project.count(),
+        prisma.project.count({ where: { status: 'ACTIVE' } }),
+        prisma.activity.findMany({
+          take: 10,
+          orderBy: { createdAt: 'desc' },
+          include: {
+            user: {
+              select: {
+                firstName: true,
+                lastName: true,
+                email: true
+              }
+            },
+            knowledgeItem: {
+              select: { title: true }
+            }
+          }
+        })
+      ]);
+
+      (dashboardData as any).admin = {
+        totalUsers,
+        activeUsers,
+        pendingApprovals: pendingUsers,
+        totalProjects,
+        activeProjects,
+        systemActivity: recentActivity.map(activity => ({
+          id: activity.id,
+          type: activity.type,
+          description: activity.description,
+          timestamp: activity.createdAt,
+          user: activity.user,
+          knowledgeTitle: activity.knowledgeItem?.title
+        }))
+      };
+    }
+
+    sendSuccessResponse(res, dashboardData, 'Dashboard stats retrieved successfully');
+  } catch (error: any) {
+    console.error('Error fetching dashboard stats:', error);
+    sendErrorResponse(res, 'Failed to fetch dashboard stats', 500);
+  }
+});
+
+/**
  * @route GET /api/admin/users
  * @desc Get all users
  * @access Private (Admin only)

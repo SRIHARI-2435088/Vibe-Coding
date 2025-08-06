@@ -335,6 +335,18 @@ export const filesApi = {
   },
 
   /**
+   * Increment download count
+   */
+  async incrementDownloadCount(id: string): Promise<void> {
+    try {
+      await apiClient.post(`/files/${id}/download-count`);
+    } catch (error) {
+      console.error('Failed to increment download count:', error);
+      // Don't throw error as this is non-critical
+    }
+  },
+
+  /**
    * Attach file to knowledge item
    */
   async attachToKnowledge(fileId: string, knowledgeItemId: string): Promise<void> {

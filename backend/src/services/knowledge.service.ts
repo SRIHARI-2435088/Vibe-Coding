@@ -446,10 +446,211 @@ export class KnowledgeService {
    * Search knowledge items (legacy method for backward compatibility)
    */
   async searchKnowledgeItems_old(query: string, options: KnowledgeSearchOptions = {}): Promise<any> {
-    return this.searchKnowledgeItems({
+    return this.getKnowledgeItems({
       ...options,
       search: query
     });
+  }
+
+  /**
+   * Get knowledge statistics
+   */
+  async getKnowledgeStats(): Promise<any> {
+    try {
+      const knowledge = await simpleDb.getAllKnowledgeItems();
+
+      const total = knowledge.length;
+      const published = knowledge.filter((item: any) => item.status === 'PUBLISHED').length;
+      const drafts = knowledge.filter((item: any) => item.status === 'DRAFT').length;
+      const archived = knowledge.filter((item: any) => item.status === 'ARCHIVED').length;
+
+      // Get popular tags
+      const allTags: string[] = [];
+      knowledge.forEach((item: any) => {
+        if (item.tags) {
+          try {
+            const tags = JSON.parse(item.tags);
+            allTags.push(...tags);
+          } catch (e) {
+            // Ignore parsing errors
+          }
+        }
+      });
+
+      const tagCounts: { [key: string]: number } = {};
+      allTags.forEach(tag => {
+        tagCounts[tag] = (tagCounts[tag] || 0) + 1;
+      });
+
+      const popularTags = Object.entries(tagCounts)
+        .map(([tag, count]) => ({ tag, count }))
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 10);
+
+      // Get weekly stats (mock data for now)
+      const weeklyViews = Math.floor(Math.random() * 1000) + 100;
+
+      return {
+        total,
+        published,
+        drafts,
+        archived,
+        myContributions: 0, // Will be calculated based on user context
+        weeklyViews,
+        popularTags
+      };
+    } catch (error) {
+      console.error('Error getting knowledge stats:', error);
+      throw new Error('Failed to get knowledge statistics');
+    }
+  }
+
+  /**
+   * Get featured/popular knowledge items
+   */
+  async getFeaturedKnowledgeItems(limit: number = 10): Promise<any[]> {
+    try {
+      const knowledge = await simpleDb.getAllKnowledgeItems();
+
+      // Filter for published items and sort by view count (mock sorting for now)
+      const featuredItems = knowledge
+        .filter((item: any) => item.status === 'PUBLISHED' && item.isPublic !== false)
+        .sort((a: any, b: any) => {
+          // Sort by created date as a proxy for popularity
+          return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+        })
+        .slice(0, limit)
+        .map((item: any) => ({
+          ...item,
+          tags: item.tags ? JSON.parse(item.tags) : [],
+          viewCount: Math.floor(Math.random() * 100) + 10, // Mock view count
+          rating: Math.floor(Math.random() * 50) / 10 + 1 // Mock rating 1-5
+        }));
+
+      return featuredItems;
+    } catch (error) {
+      console.error('Error getting featured knowledge items:', error);
+      throw new Error('Failed to get featured knowledge items');
+    }
+  }
+
+  /**
+   * Search knowledge items with advanced filtering
+   */
+  async searchKnowledgeItemsAdvanced(options: KnowledgeSearchOptions): Promise<{
+    items: any[];
+    pagination: any;
+    totalPages: number;
+  }> {
+    try {
+      let knowledge = await simpleDb.getAllKnowledgeItems();
+
+      // Apply filters
+      if (options.search) {
+        const searchLower = options.search.toLowerCase();
+        knowledge = knowledge.filter((item: any) => 
+          item.title?.toLowerCase().includes(searchLower) ||
+          item.description?.toLowerCase().includes(searchLower) ||
+          item.content?.toLowerCase().includes(searchLower) ||
+          item.category?.toLowerCase().includes(searchLower)
+        );
+      }
+
+      if (options.type) {
+        knowledge = knowledge.filter((item: any) => item.type === options.type);
+      }
+
+      if (options.difficulty) {
+        knowledge = knowledge.filter((item: any) => item.difficulty === options.difficulty);
+      }
+
+      if (options.status) {
+        knowledge = knowledge.filter((item: any) => item.status === options.status);
+      }
+
+      if (options.category) {
+        knowledge = knowledge.filter((item: any) => 
+          item.category?.toLowerCase().includes(options.category!.toLowerCase())
+        );
+      }
+
+      if (options.projectId) {
+        knowledge = knowledge.filter((item: any) => item.projectId === options.projectId);
+      }
+
+      if (options.authorId) {
+        knowledge = knowledge.filter((item: any) => item.authorId === options.authorId);
+      }
+
+      if (options.isPublic !== undefined) {
+        knowledge = knowledge.filter((item: any) => item.isPublic === options.isPublic);
+      }
+
+      if (options.tags && options.tags.length > 0) {
+        knowledge = knowledge.filter((item: any) => {
+          if (!item.tags) return false;
+          try {
+            const itemTags = JSON.parse(item.tags);
+            return options.tags!.some(tag => itemTags.includes(tag));
+          } catch (e) {
+            return false;
+          }
+        });
+      }
+
+      // Date filtering can be added to KnowledgeSearchOptions type if needed
+
+      // Sort
+      const sortBy = options.sortBy || 'createdAt';
+      const sortOrder = options.sortOrder || 'desc';
+
+      knowledge.sort((a: any, b: any) => {
+        let aVal = a[sortBy];
+        let bVal = b[sortBy];
+
+        if (sortBy === 'createdAt' || sortBy === 'updatedAt') {
+          aVal = new Date(aVal).getTime();
+          bVal = new Date(bVal).getTime();
+        }
+
+        if (sortOrder === 'asc') {
+          return aVal > bVal ? 1 : -1;
+        } else {
+          return aVal < bVal ? 1 : -1;
+        }
+      });
+
+      // Pagination
+      const page = options.page || 1;
+      const limit = options.limit || 10;
+      const offset = (page - 1) * limit;
+      const total = knowledge.length;
+      const totalPages = Math.ceil(total / limit);
+      const paginatedItems = knowledge.slice(offset, offset + limit);
+
+      // Format items
+      const formattedItems = paginatedItems.map((item: any) => ({
+        ...item,
+        tags: item.tags ? JSON.parse(item.tags) : [],
+        viewCount: Math.floor(Math.random() * 100) + 1, // Mock view count
+        rating: Math.floor(Math.random() * 50) / 10 + 1 // Mock rating 1-5
+      }));
+
+      return {
+        items: formattedItems,
+        pagination: {
+          page,
+          limit,
+          total,
+          hasNext: page < totalPages,
+          hasPrev: page > 1
+        },
+        totalPages
+      };
+    } catch (error) {
+      console.error('Error searching knowledge items:', error);
+      throw new Error('Failed to search knowledge items');
+    }
   }
 }
 

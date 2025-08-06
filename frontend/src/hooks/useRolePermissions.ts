@@ -232,7 +232,9 @@ export const useGlobalPermissions = () => {
   }, [user?.role]);
 
   const canCreateProjects = canCreateProject;
-  const canManageAllProjects = isSystemAdmin;
+  const canManageAllProjects = useCallback((): boolean => {
+    return user?.role === 'ADMIN' || user?.role === 'PROJECT_MANAGER';
+  }, [user?.role]);
   const canViewAllProjects = useCallback((): boolean => {
     return user?.role === 'ADMIN' || user?.role === 'PROJECT_MANAGER';
   }, [user?.role]);

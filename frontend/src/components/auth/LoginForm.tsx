@@ -61,9 +61,9 @@ const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToRegister }) => {
     try {
       // Use the correct demo passwords based on email
       const passwords: { [key: string]: string } = {
-        'admin@ktat.com': 'admin123!',
-        'pm@ktat.com': 'pm123!',
-        'dev@ktat.com': 'dev123!'
+        'admin@ktat.com': 'password123',
+        'pm@ktat.com': 'password123',
+        'dev@ktat.com': 'password123'
       };
       const password = passwords[email] || 'demo123!';
       await login(email, password);

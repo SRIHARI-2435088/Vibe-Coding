@@ -4,6 +4,13 @@
 
 A comprehensive knowledge transfer automation tool designed to capture, organize, and share critical project knowledge during team transitions. Built with modern web technologies for scalability and user experience.
 
+## 🔑 Demo Accounts:
+Admin: admin@ktat.com / password123 (Full access)
+Project Manager: pm@ktat.com / password123 (Project management)
+Developer 1: dev1@ktat.com / password123 (Technical contributor)
+Developer 2: dev2@ktat.com / password123 (Technical contributor)
+Viewer: viewer@ktat.com / password123 (Read-only access)
+
 ## 🏗️ Technology Stack
 
 - **Frontend**: React.js + TypeScript + Vite + Tailwind CSS + shadcn/ui

@@ -30,6 +30,15 @@ import {
 } from '@/components/ui';
 import { knowledgeApi, KnowledgeItem, KnowledgeType, DifficultyLevel, ContentStatus } from '@/services/api/knowledge';
 import { useToast } from '@/hooks/useToast';
+import { 
+  RequirePermission, 
+  CanCreateKnowledge, 
+  CanEditKnowledge, 
+  UserRoleBadge,
+  ShowIf 
+} from '@/components/auth/RBACComponents';
+import { useAuth } from '@/contexts/AuthContext';
+import { useGlobalPermissions } from '@/hooks/useRolePermissions';
 
 interface KnowledgeFormProps {
   knowledgeItem?: KnowledgeItem;
@@ -37,6 +46,9 @@ interface KnowledgeFormProps {
   onSave?: (item: KnowledgeItem) => void;
   onCancel?: () => void;
   isEdit?: boolean;
+  isOpen?: boolean;
+  onClose?: () => void;
+  onSuccess?: (item: KnowledgeItem) => void;
 }
 
 interface FormData {
@@ -56,8 +68,14 @@ export const KnowledgeForm: React.FC<KnowledgeFormProps> = ({
   projectId,
   onSave,
   onCancel,
-  isEdit = false
+  isEdit = false,
+  isOpen = false,
+  onClose,
+  onSuccess
 }) => {
+  const { user } = useAuth();
+  const { canCreateKnowledge, canManageAllKnowledge } = useGlobalPermissions();
+
   const [formData, setFormData] = useState<FormData>({
     title: '',
     description: '',
@@ -137,23 +155,23 @@ export const KnowledgeForm: React.FC<KnowledgeFormProps> = ({
     const newErrors: Record<string, string> = {};
 
     if (!formData.title.trim()) {
-      newErrors.title = 'Title is required';
+      newErrors['title'] = 'Title is required';
     } else if (formData.title.length > 200) {
-      newErrors.title = 'Title must be less than 200 characters';
+      newErrors['title'] = 'Title must be less than 200 characters';
     }
 
     if (!formData.content.trim()) {
-      newErrors.content = 'Content is required';
+      newErrors['content'] = 'Content is required';
     } else if (formData.content.length < 10) {
-      newErrors.content = 'Content must be at least 10 characters long';
+      newErrors['content'] = 'Content must be at least 10 characters long';
     }
 
     if (formData.description && formData.description.length > 500) {
-      newErrors.description = 'Description must be less than 500 characters';
+      newErrors['description'] = 'Description must be less than 500 characters';
     }
 
     if (!formData.projectId) {
-      newErrors.projectId = 'Project is required';
+      newErrors['projectId'] = 'Project is required';
     }
 
     setErrors(newErrors);
@@ -192,7 +210,7 @@ export const KnowledgeForm: React.FC<KnowledgeFormProps> = ({
         description: `Knowledge item ${isEdit ? 'updated' : 'created'} successfully.`,
       });
 
-      onSave?.(savedItem);
+      handleSuccess(savedItem);
     } catch (error: any) {
       toast({
         title: 'Error',
@@ -206,27 +224,91 @@ export const KnowledgeForm: React.FC<KnowledgeFormProps> = ({
 
   // Handle publish
   const handlePublish = () => {
-    handleSave('PUBLISHED');
+    handleSave(ContentStatus.PUBLISHED);
   };
 
   // Handle save as draft
   const handleSaveDraft = () => {
-    handleSave('DRAFT');
+    handleSave(ContentStatus.DRAFT);
   };
 
-  return (
-    <>
-      <Card className="w-full max-w-4xl mx-auto">
+  // Check if user can edit this specific knowledge item
+  const canEditThisItem = () => {
+    if (!knowledgeItem) return true; // Creating new item
+    if (canManageAllKnowledge()) return true; // Admin can edit all
+    return knowledgeItem.authorId === user?.id; // Authors can edit their own
+  };
+
+  // Show permission error if user cannot perform action
+  if (isEdit && !canEditThisItem()) {
+    return (
+      <Alert variant="destructive">
+        <AlertDescription>
+          You don't have permission to edit this knowledge item.
+        </AlertDescription>
+      </Alert>
+    );
+  }
+
+  if (!isEdit && !canCreateKnowledge()) {
+    return (
+      <Alert variant="destructive">
+        <AlertDescription>
+          You don't have permission to create knowledge items.
+        </AlertDescription>
+      </Alert>
+    );
+  }
+
+  // Handle save success callback
+  const handleSuccess = (item: KnowledgeItem) => {
+    if (onSuccess) {
+      onSuccess(item);
+    }
+    if (onSave) {
+      onSave(item);
+    }
+    if (onClose) {
+      onClose();
+    }
+  };
+
+  // Handle cancel
+  const handleCancel = () => {
+    if (onClose) {
+      onClose();
+    }
+    if (onCancel) {
+      onCancel();
+    }
+  };
+
+  const formContent = (
+    <Card className="w-full max-w-4xl mx-auto border-0 shadow-none">
         <CardHeader>
-          <CardTitle>
-            {isEdit ? 'Edit Knowledge Item' : 'Create New Knowledge Item'}
-          </CardTitle>
-          <CardDescription>
-            {isEdit 
-              ? 'Update the knowledge item information below.'
-              : 'Share your knowledge with the team by filling out the form below.'
-            }
-          </CardDescription>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle>
+                {isEdit ? 'Edit Knowledge Item' : 'Create New Knowledge Item'}
+              </CardTitle>
+              <CardDescription>
+                {isEdit 
+                  ? 'Update the knowledge item information below.'
+                  : 'Share your knowledge with the team by filling out the form below.'
+                }
+              </CardDescription>
+            </div>
+            {user && (
+              <div className="flex items-center gap-2">
+                <UserRoleBadge role={user.role} />
+                <ShowIf condition={isEdit && !!knowledgeItem}>
+                  <Badge variant="outline">
+                    {knowledgeItem?.authorId === user.id ? 'Your Item' : 'Team Item'}
+                  </Badge>
+                </ShowIf>
+              </div>
+            )}
+          </div>
         </CardHeader>
 
         <CardContent className="space-y-6">
@@ -239,10 +321,10 @@ export const KnowledgeForm: React.FC<KnowledgeFormProps> = ({
                 value={formData.title}
                 onChange={(e) => handleInputChange('title', e.target.value)}
                 placeholder="Enter a descriptive title..."
-                className={errors.title ? 'border-red-500' : ''}
+                className={errors['title'] ? 'border-red-500' : ''}
               />
-              {errors.title && (
-                <p className="text-sm text-red-500">{errors.title}</p>
+              {errors['title'] && (
+                <p className="text-sm text-red-500">{errors['title']}</p>
               )}
             </div>
 
@@ -254,10 +336,10 @@ export const KnowledgeForm: React.FC<KnowledgeFormProps> = ({
                 onChange={(e) => handleInputChange('description', e.target.value)}
                 placeholder="Brief description of what this knowledge covers..."
                 rows={3}
-                className={errors.description ? 'border-red-500' : ''}
+                className={errors['description'] ? 'border-red-500' : ''}
               />
-              {errors.description && (
-                <p className="text-sm text-red-500">{errors.description}</p>
+              {errors['description'] && (
+                <p className="text-sm text-red-500">{errors['description']}</p>
               )}
             </div>
           </div>
@@ -297,12 +379,12 @@ export const KnowledgeForm: React.FC<KnowledgeFormProps> = ({
                 onChange={(e) => handleInputChange('content', e.target.value)}
                 placeholder="Write your knowledge content here... Use markdown for formatting."
                 rows={15}
-                className={`font-mono ${errors.content ? 'border-red-500' : ''}`}
+                className={`font-mono ${errors['content'] ? 'border-red-500' : ''}`}
               />
             )}
             
-            {errors.content && (
-              <p className="text-sm text-red-500">{errors.content}</p>
+            {errors['content'] && (
+              <p className="text-sm text-red-500">{errors['content']}</p>
             )}
           </div>
 
@@ -357,12 +439,17 @@ export const KnowledgeForm: React.FC<KnowledgeFormProps> = ({
               <div className="flex items-center space-x-2">
                 <Switch
                   checked={formData.isPublic}
-                  onCheckedChange={(checked) => handleInputChange('isPublic', checked)}
+                  onCheckedChange={(checked: boolean) => handleInputChange('isPublic', checked)}
                 />
                 <Label className="text-sm">
                   {formData.isPublic ? 'Public (visible to everyone)' : 'Team only'}
                 </Label>
               </div>
+              <ShowIf condition={formData.isPublic}>
+                <p className="text-xs text-muted-foreground">
+                  Public items are visible to all users regardless of project membership.
+                </p>
+              </ShowIf>
             </div>
           </div>
 
@@ -410,7 +497,7 @@ export const KnowledgeForm: React.FC<KnowledgeFormProps> = ({
         </CardContent>
 
         <CardFooter className="flex justify-between">
-          <Button variant="outline" onClick={onCancel} disabled={loading}>
+          <Button variant="outline" onClick={handleCancel} disabled={loading}>
             Cancel
           </Button>
           
@@ -436,6 +523,65 @@ export const KnowledgeForm: React.FC<KnowledgeFormProps> = ({
           </div>
         </CardFooter>
       </Card>
+  );
+
+  // Return dialog wrapper if isOpen is true, otherwise return plain form
+  if (isOpen) {
+    return (
+      <>
+        <Dialog open={isOpen} onOpenChange={(open) => !open && onClose?.()}>
+          <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>
+                {isEdit ? 'Edit Knowledge Item' : 'Create New Knowledge Item'}
+              </DialogTitle>
+              <DialogDescription>
+                {isEdit 
+                  ? 'Update the knowledge item information below.'
+                  : 'Share your knowledge with the team by filling out the form below.'
+                }
+              </DialogDescription>
+            </DialogHeader>
+            {formContent}
+          </DialogContent>
+        </Dialog>
+
+        {/* Preview Dialog for Mobile */}
+        <Dialog open={showPreview} onOpenChange={setShowPreview}>
+          <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Content Preview</DialogTitle>
+              <DialogDescription>
+                This is how your content will appear to readers.
+              </DialogDescription>
+            </DialogHeader>
+            
+            <div className="prose prose-sm max-w-none">
+              <h1>{formData.title}</h1>
+              {formData.description && (
+                <p className="text-muted-foreground">{formData.description}</p>
+              )}
+              <div className="mt-4">
+                {formData.content.split('\n').map((paragraph, index) => (
+                  <p key={index} className="mb-2">
+                    {paragraph || '\u00A0'}
+                  </p>
+                ))}
+              </div>
+            </div>
+            
+            <DialogFooter>
+              <Button onClick={() => setShowPreview(false)}>Close Preview</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </>
+    );
+  }
+
+  return (
+    <>
+      {formContent}
 
       {/* Preview Dialog for Mobile */}
       <Dialog open={showPreview} onOpenChange={setShowPreview}>

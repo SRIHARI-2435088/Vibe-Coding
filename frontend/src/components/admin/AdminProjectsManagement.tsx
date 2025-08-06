@@ -154,20 +154,27 @@ export const AdminProjectsManagement: React.FC = () => {
   });
   const [techInput, setTechInput] = useState('');
 
-  const { isSystemAdmin } = useGlobalPermissions();
+  const { canManageAllProjects } = useGlobalPermissions();
   const { toast } = useToast();
 
   // Fetch projects
   const fetchProjects = async () => {
     try {
       setLoading(true);
-      const projectsData = await adminApi.getAllProjects();
-      setProjects(projectsData);
+      
+      let allProjects: AdminProject[] = [];
+      
+      if (canManageAllProjects()) {
+        // Fetch all projects for admins and project managers
+        allProjects = await adminApi.getAllProjects();
+      }
+      
+      setProjects(allProjects);
     } catch (error: any) {
       console.error('Error fetching projects:', error);
       toast({
         title: 'Error',
-        description: 'Failed to load projects',
+        description: 'Failed to fetch projects. Please try again.',
         variant: 'destructive',
       });
     } finally {
@@ -176,9 +183,7 @@ export const AdminProjectsManagement: React.FC = () => {
   };
 
   useEffect(() => {
-    if (isSystemAdmin()) {
-      fetchProjects();
-    }
+    fetchProjects();
   }, []);
 
   // Handle status update
@@ -363,7 +368,7 @@ export const AdminProjectsManagement: React.FC = () => {
     totalKnowledge: projects.reduce((sum, p) => sum + p._count.knowledgeItems, 0),
   };
 
-  if (!isSystemAdmin()) {
+  if (!canManageAllProjects()) {
     return (
       <div className="text-center py-12">
         <Alert>

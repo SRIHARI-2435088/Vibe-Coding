@@ -1,23 +1,28 @@
 import { Request, Response, NextFunction } from 'express';
+import { 
+  LoginRequest, 
+  RegisterRequest, 
+  AuthResponse, 
+  UserProfile, 
+  UserRole,
+  PasswordUpdateRequest 
+} from '../types/auth.types';
 import { authService } from '../services/auth.service';
-import { LoginRequest, RegisterRequest, PasswordUpdateRequest } from '../types/auth.types';
+import { activityService } from '../services/activity.service';
+import { generateToken } from '../utils/jwt.utils';
+import { prismaClient as prisma } from '../config/prisma';
 import { 
   sendSuccessResponse, 
+  sendValidationError, 
+  sendUnauthorizedError, 
+  sendInternalServerError, 
   sendCreatedResponse,
-  sendBadRequestError,
-  sendUnauthorizedError,
   sendNotFoundError,
-  sendConflictError,
-  sendValidationError,
-  sendInternalServerError 
+  sendBadRequestError,
+  sendConflictError 
 } from '../utils/response.utils';
 import { logger } from '../utils/logger.utils';
-import { Database } from '../config/database';
-import { PrismaClient } from '@prisma/client';
 import { hashPassword, comparePassword } from '../utils/password.utils';
-import { generateToken } from '../utils/jwt.utils';
-
-const prisma = new PrismaClient();
 
 /**
  * Authentication Controller
@@ -91,13 +96,7 @@ export class AuthController {
       });
 
       // Log the registration activity
-      await prisma.activity.create({
-        data: {
-          type: 'USER_SIGNUP',
-          description: `${newUser.firstName} ${newUser.lastName} registered and is pending approval`,
-          userId: newUser.id
-        }
-      });
+      await activityService.logUserRegistration(newUser.id, newUser.email);
 
       logger.info('User registered successfully (pending approval)', {
         userId: newUser.id,
@@ -163,6 +162,7 @@ export class AuthController {
 
       // Verify password
       const isPasswordValid = await comparePassword(loginData.password, user.password);
+      
       if (!isPasswordValid) {
         sendUnauthorizedError(res, 'Invalid credentials');
         return;
@@ -174,12 +174,25 @@ export class AuthController {
         data: { lastLoginAt: new Date() }
       });
 
+      // Log login activity
+      await activityService.logLogin(user.id, user.email);
+
       // Generate token
       const token = generateToken({
-        userId: user.id,
+        id: user.id,
         email: user.email,
         role: user.role
       });
+
+      // Parse expertise areas safely
+      let expertiseAreasArray = [];
+      try {
+        if (user.expertiseAreas) {
+          expertiseAreasArray = JSON.parse(user.expertiseAreas);
+        }
+      } catch (parseError) {
+        expertiseAreasArray = [];
+      }
 
       const authResponse = {
         user: {
@@ -191,7 +204,7 @@ export class AuthController {
           role: user.role,
           bio: user.bio,
           profilePicture: user.profilePicture,
-          expertiseAreas: user.expertiseAreas ? JSON.parse(user.expertiseAreas) : [],
+          expertiseAreas: expertiseAreasArray,
           createdAt: user.createdAt,
           lastLoginAt: user.lastLoginAt
         },
@@ -205,10 +218,11 @@ export class AuthController {
       });
 
       sendSuccessResponse(res, authResponse, 'Login successful');
+
     } catch (error) {
       logger.warn('Login failed', {
         error: error instanceof Error ? error.message : 'Unknown error',
-        email: req.body.email,
+        email: req.body?.email || 'unknown',
         ip: req.ip,
       });
 
@@ -373,8 +387,6 @@ export class AuthController {
    */
   async refreshToken(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      // For now, we'll implement a simple token refresh
-      // In a more complex system, you'd validate refresh tokens
       if (!req.user) {
         sendUnauthorizedError(res, 'User not authenticated');
         return;
@@ -382,11 +394,23 @@ export class AuthController {
 
       const userProfile = await authService.getUserProfile(req.user.id);
       
-      // Generate new token (you could implement refresh token logic here)
-      const authResponse = await authService.login({
+      if (!userProfile) {
+        sendUnauthorizedError(res, 'User not found');
+        return;
+      }
+
+      // Generate new token
+      const token = generateToken({
+        id: userProfile.id,
         email: userProfile.email,
-        password: '', // This would need to be handled differently in a real implementation
+        role: userProfile.role
       });
+
+      const authResponse = {
+        user: userProfile,
+        token,
+        expiresIn: '7d'
+      };
 
       sendSuccessResponse(res, authResponse, 'Token refreshed successfully');
     } catch (error) {
