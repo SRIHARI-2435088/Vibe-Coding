@@ -1,0 +1,22 @@
+{
+  "name": "ktat-shared",
+  "version": "1.0.0",
+  "description": "Knowledge Transfer Automation Tool - Shared Types and Utilities",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "type-check": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.2"
+  },
+  "keywords": [
+    "shared",
+    "types",
+    "utilities",
+    "typescript"
+  ],
+  "author": "Vibe Coding Competition Team",
+  "license": "MIT"
+} 

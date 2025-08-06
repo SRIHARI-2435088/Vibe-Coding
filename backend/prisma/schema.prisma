@@ -1,0 +1,183 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id             String          @id @default(cuid())
+  email          String          @unique
+  username       String          @unique
+  firstName      String
+  lastName       String
+  password       String
+  role           String          @default("CONTRIBUTOR")
+  profilePicture String?
+  bio            String?
+  expertiseAreas String
+  isActive       Boolean         @default(true)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  lastLoginAt    DateTime?
+  activities     Activity[]
+  comments       Comment[]
+  knowledgeItems KnowledgeItem[]
+  projects       ProjectMember[]
+  reviews        Review[]
+
+  @@map("users")
+}
+
+model Project {
+  id             String          @id @default(cuid())
+  name           String
+  description    String?
+  status         String          @default("ACTIVE")
+  startDate      DateTime?
+  endDate        DateTime?
+  clientName     String?
+  technology     String
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  knowledgeItems KnowledgeItem[]
+  members        ProjectMember[]
+
+  @@map("projects")
+}
+
+model ProjectMember {
+  id        String    @id @default(cuid())
+  userId    String
+  projectId String
+  role      String    @default("MEMBER")
+  joinedAt  DateTime  @default(now())
+  leftAt    DateTime?
+  project   Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, projectId])
+  @@map("project_members")
+}
+
+model KnowledgeItem {
+  id           String                @id @default(cuid())
+  title        String
+  description  String?
+  content      String
+  type         String
+  category     String
+  tags         String
+  difficulty   String                @default("INTERMEDIATE")
+  status       String                @default("DRAFT")
+  isPublic     Boolean               @default(false)
+  viewCount    Int                   @default(0)
+  authorId     String
+  projectId    String
+  createdAt    DateTime              @default(now())
+  updatedAt    DateTime              @updatedAt
+  publishedAt  DateTime?
+  activities   Activity[]
+  attachments  Attachment[]
+  comments     Comment[]
+  dependents   KnowledgeDependency[] @relation("DependentKnowledge")
+  dependencies KnowledgeDependency[] @relation("ParentKnowledge")
+  project      Project               @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  author       User                  @relation(fields: [authorId], references: [id])
+  reviews      Review[]
+
+  @@map("knowledge_items")
+}
+
+model Attachment {
+  id              String            @id @default(cuid())
+  filename        String
+  originalName    String
+  fileType        String
+  fileSize        Int
+  filePath        String
+  mimeType        String
+  isVideo         Boolean           @default(false)
+  videoDuration   Int?
+  thumbnailPath   String?
+  knowledgeItemId String
+  uploadedAt      DateTime          @default(now())
+  knowledgeItem   KnowledgeItem     @relation(fields: [knowledgeItemId], references: [id], onDelete: Cascade)
+  annotations     VideoAnnotation[]
+
+  @@map("attachments")
+}
+
+model VideoAnnotation {
+  id             String     @id @default(cuid())
+  attachmentId   String
+  timestamp      Int
+  title          String
+  description    String?
+  annotationType String     @default("INFO")
+  createdAt      DateTime   @default(now())
+  attachment     Attachment @relation(fields: [attachmentId], references: [id], onDelete: Cascade)
+
+  @@map("video_annotations")
+}
+
+model Comment {
+  id              String        @id @default(cuid())
+  content         String
+  parentId        String?
+  authorId        String
+  knowledgeItemId String
+  isResolved      Boolean       @default(false)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  parent          Comment?      @relation("CommentReplies", fields: [parentId], references: [id])
+  replies         Comment[]     @relation("CommentReplies")
+  knowledgeItem   KnowledgeItem @relation(fields: [knowledgeItemId], references: [id], onDelete: Cascade)
+  author          User          @relation(fields: [authorId], references: [id])
+
+  @@map("comments")
+}
+
+model Review {
+  id              String        @id @default(cuid())
+  rating          Int
+  feedback        String?
+  isHelpful       Boolean?
+  reviewerId      String
+  knowledgeItemId String
+  createdAt       DateTime      @default(now())
+  knowledgeItem   KnowledgeItem @relation(fields: [knowledgeItemId], references: [id], onDelete: Cascade)
+  reviewer        User          @relation(fields: [reviewerId], references: [id])
+
+  @@unique([reviewerId, knowledgeItemId])
+  @@map("reviews")
+}
+
+model KnowledgeDependency {
+  id                   String        @id @default(cuid())
+  parentKnowledgeId    String
+  dependentKnowledgeId String
+  dependencyType       String        @default("PREREQUISITE")
+  createdAt            DateTime      @default(now())
+  dependentKnowledge   KnowledgeItem @relation("DependentKnowledge", fields: [dependentKnowledgeId], references: [id], onDelete: Cascade)
+  parentKnowledge      KnowledgeItem @relation("ParentKnowledge", fields: [parentKnowledgeId], references: [id], onDelete: Cascade)
+
+  @@unique([parentKnowledgeId, dependentKnowledgeId])
+  @@map("knowledge_dependencies")
+}
+
+model Activity {
+  id              String         @id @default(cuid())
+  type            String
+  description     String
+  userId          String
+  knowledgeItemId String?
+  metadata        String?
+  createdAt       DateTime       @default(now())
+  knowledgeItem   KnowledgeItem? @relation(fields: [knowledgeItemId], references: [id], onDelete: Cascade)
+  user            User           @relation(fields: [userId], references: [id])
+
+  @@map("activities")
+}
