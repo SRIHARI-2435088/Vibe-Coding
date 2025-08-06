@@ -117,4 +117,4 @@ knowledge-transfer-tool/
 
 ## 📄 License
 
-This project is part of the Vibe Coding Competition. 
+This project is part of the Vibe Coding Competition.
